@@ -5,6 +5,7 @@ Are you a lazy AF "tech influcener"?
 Do you think Python is a snek that lives in Asia? 
 
 If so, you probably shouldn't be giving people tech advice.. yet here we are. Today is your lucky day!
+```
 
  ▄█ ▄ █▀█  ▄▀▀▀▀█  ▄█      ▄▀▀▀▀█  ▄▀▀▀▀█  ▄▀█▄  ▄█▀█  ▄▀▀▀▀█       ▄▀▀▀▀▀█  ▄▀▀▀▀█     
 █ ██ ██ █ ▓ ▄▀▀▀▀ ▓ █     ▓ ▄▀▀▀▀ ▓ ▄▀█ █ ▓ ▄ █ █   █ ▓ ▄▀▀▀▀      ▀▀▀█ █▀▀ ▓ ▄▀█ █     
@@ -17,6 +18,7 @@ If so, you probably shouldn't be giving people tech advice.. yet here we are. To
 ░ █▄▄▄▄ ░ █▄▄▄▄ █ █ ░ █          ░ █ ▀▀▀ █ █ ░ █▀█ █ ▄▄▄▄▀ █    █ █   ░ █▄▄▄▄ ░ █▀▄ ▀▄ 
 █▄▄▄▄▀  █▄▄▄▄▀  █▀  █▄█          █▄█     █▀  █▄█ █▀  █▄▄▄▄▀     █▀    █▄▄▄▄▀  █▄█  ▀▄▄█
 
+```
 
  A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on, so if you're a busy boy, you can start/end replay buffer, save replay buffer, and switch scenes. 
 
