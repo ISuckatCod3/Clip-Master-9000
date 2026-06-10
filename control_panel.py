@@ -32,9 +32,9 @@ DARK_COLORS = {
     "text": "#ffa844",
     "muted": "#a7adbb",
     "accent": "#2f8cff",
-    "accent_active": "#1f6fd1",
+    "accent_active": "#1fa8d1",
     "danger": "#d64f4f",
-    "selection": "#d6cc3c",
+    "selection": "#353972",
 }
 
 
