@@ -8,6 +8,7 @@ import sys
 import threading
 import tkinter as tk
 import ctypes
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -19,6 +20,8 @@ APP_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
 SCRIPT_PATH = APP_DIR / "live_video_interpreter.py"
 ICON_PATH = APP_DIR / "assets" / "app.ico"
+APP_NAME = "Clip Master 9000"
+REPO_URL = "https://github.com/ISuckatCod3/Clip-Master-9000"
 
 DARK_COLORS = {
     "background": "#111318",
@@ -71,6 +74,8 @@ DEFAULT_CONFIG = {
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
     "openai": {
+        "api_key": None,
+        "api_key_env": "OPENAI_API_KEY",
         "transcription_model": "gpt-4o-mini-transcribe",
         "naming_model": "gpt-4.1-mini",
         "max_frames_for_naming": 8,
@@ -99,7 +104,7 @@ DEFAULT_CONFIG = {
 class ControlPanel(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Live Video Interpreter")
+        self.title(APP_NAME)
         self.geometry("980x720")
         self.minsize(860, 620)
         self.configure(background=DARK_COLORS["background"])
@@ -120,7 +125,16 @@ class ControlPanel(tk.Tk):
         self.clip_seconds = tk.StringVar(value=str(self.config.get("clip_seconds", 45)))
         self.fps = tk.StringVar(value=str(self.config.get("fps", 12)))
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
+        openai = self.config.get("openai", {})
+        self.openai_api_key = tk.StringVar(value=openai.get("api_key") or "")
+        self.openai_key_env = tk.StringVar(value=openai.get("api_key_env", "OPENAI_API_KEY"))
+        self.openai_transcription_model = tk.StringVar(
+            value=openai.get("transcription_model", "gpt-4o-mini-transcribe")
+        )
+        self.openai_naming_model = tk.StringVar(value=openai.get("naming_model", "gpt-4.1-mini"))
+        self.openai_max_frames = tk.StringVar(value=str(openai.get("max_frames_for_naming", 8)))
         lmstudio = self.config.get("lmstudio", {})
+        self.lmstudio_api_key = tk.StringVar(value=lmstudio.get("api_key") or "")
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
         self.lmstudio_model = tk.StringVar(value=lmstudio.get("vision_model", "qwen2.5-vl-7b-instruct"))
         self.lmstudio_key_env = tk.StringVar(value=lmstudio.get("api_key_env", "LMSTUDIO_API_KEY"))
@@ -142,8 +156,10 @@ class ControlPanel(tk.Tk):
             self.obs_password_env = tk.StringVar(value="OBS_WEBSOCKET_PASSWORD")
             self.obs_password = tk.StringVar(value=os.getenv("OBS_WEBSOCKET_PASSWORD", ""))
         self.status = tk.StringVar(value="Idle")
+        self.ai_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
 
         self.build_ui()
+        self.update_ai_provider_fields()
         self.refresh_monitors()
         self.refresh_audio_devices()
         self.refresh_video_devices()
@@ -294,7 +310,7 @@ class ControlPanel(tk.Tk):
         header = ttk.Frame(outer)
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="Live Video Interpreter", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text=APP_NAME, font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.status).grid(row=0, column=1, sticky="e")
 
         device_frame = ttk.LabelFrame(outer, text="Capture")
@@ -374,32 +390,70 @@ class ControlPanel(tk.Tk):
         ttk.Combobox(ai_frame, textvariable=self.ai_provider, values=("lmstudio", "openai"), state="readonly").grid(
             row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="LM Studio base URL").grid(row=0, column=1, sticky="w", padx=8, pady=(8, 2))
-        ttk.Entry(ai_frame, textvariable=self.lmstudio_base_url).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(ai_frame, text="LM Studio model").grid(row=0, column=2, sticky="w", padx=8, pady=(8, 2))
-        ttk.Entry(ai_frame, textvariable=self.lmstudio_model).grid(row=1, column=2, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(ai_frame, text="Token env var").grid(row=0, column=3, sticky="w", padx=8, pady=(8, 2))
-        ttk.Entry(ai_frame, textvariable=self.lmstudio_key_env).grid(row=1, column=3, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(ai_frame, text="Voice commands").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(ai_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
+        self.openai_fields = ttk.Frame(ai_frame)
+        self.openai_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
+        for column in range(4):
+            self.openai_fields.columnconfigure(column, weight=1)
+        ttk.Label(self.openai_fields, text="API key env var").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_key_env).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(self.openai_fields, text="API key").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_api_key, show="*").grid(
+            row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.openai_fields, text="Naming model").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_naming_model).grid(
+            row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.openai_fields, text="Transcription model").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_transcription_model).grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.openai_fields, text="Max naming frames").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_max_frames).grid(
             row=3, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Clip action").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(ai_frame, textvariable=self.clip_action, values=("obs_replay_buffer", "local_buffer"), state="readonly").grid(
-            row=3, column=1, sticky="ew", padx=8, pady=(0, 8)
+
+        self.lmstudio_fields = ttk.Frame(ai_frame)
+        self.lmstudio_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
+        for column in range(4):
+            self.lmstudio_fields.columnconfigure(column, weight=1)
+        ttk.Label(self.lmstudio_fields, text="LM Studio base URL").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_base_url).grid(
+            row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Vosk model folder").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(self.lmstudio_fields, text="LM Studio model").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_model).grid(
+            row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.lmstudio_fields, text="Token env var").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_key_env).grid(
+            row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.lmstudio_fields, text="API key").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_api_key, show="*").grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        ttk.Label(ai_frame, text="Voice commands").grid(row=3, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(ai_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
+            row=4, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(ai_frame, text="Clip action").grid(row=3, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(ai_frame, textvariable=self.clip_action, values=("obs_replay_buffer", "local_buffer"), state="readonly").grid(
+            row=4, column=1, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(ai_frame, text="Vosk model folder").grid(row=3, column=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.vosk_model_path).grid(
-            row=3, column=2, sticky="ew", padx=8, pady=(0, 8)
+            row=4, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Button(ai_frame, text="Browse Vosk Model", command=self.browse_vosk_model).grid(
-            row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
+            row=4, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Checkbutton(
             ai_frame,
             text="Enable OBS scene/source voice switching",
             variable=self.enable_obs_scene_source_switching,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=8, pady=(0, 8))
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=8, pady=(0, 8))
 
         action_frame = ttk.Frame(outer)
         action_frame.grid(row=5, column=0, sticky="nsew", pady=(8, 0))
@@ -421,7 +475,22 @@ class ControlPanel(tk.Tk):
         self.log = tk.Text(action_frame, height=12, wrap=tk.WORD)
         self.log.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         self.log.configure(state=tk.DISABLED)
+
+        footer = ttk.Frame(action_frame)
+        footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        footer.columnconfigure(0, weight=1)
+        ttk.Button(footer, text="Contact Me", command=self.open_contact_link).grid(row=0, column=1, sticky="e")
         self.style_native_widgets()
+
+    def update_ai_provider_fields(self) -> None:
+        if not hasattr(self, "openai_fields") or not hasattr(self, "lmstudio_fields"):
+            return
+        if self.ai_provider.get().lower() == "openai":
+            self.lmstudio_fields.grid_remove()
+            self.openai_fields.grid()
+        else:
+            self.openai_fields.grid_remove()
+            self.lmstudio_fields.grid()
 
     def load_config(self) -> dict:
         if CONFIG_PATH.exists():
@@ -461,8 +530,16 @@ class ControlPanel(tk.Tk):
             self.config["fps"] = int(self.fps.get())
             self.config["ffmpeg_path"] = self.ffmpeg_path.get() or "ffmpeg"
             self.config["ai_provider"] = self.ai_provider.get()
+            self.config["openai"] = {
+                "api_key": self.openai_api_key.get() or None,
+                "api_key_env": self.openai_key_env.get() or "OPENAI_API_KEY",
+                "transcription_model": self.openai_transcription_model.get() or "gpt-4o-mini-transcribe",
+                "naming_model": self.openai_naming_model.get() or "gpt-4.1-mini",
+                "max_frames_for_naming": int(self.openai_max_frames.get() or "8"),
+            }
             self.config["lmstudio"] = {
                 "base_url": self.lmstudio_base_url.get() or "http://localhost:1234/v1",
+                "api_key": self.lmstudio_api_key.get() or None,
                 "api_key_env": self.lmstudio_key_env.get() or "LMSTUDIO_API_KEY",
                 "vision_model": self.lmstudio_model.get() or "qwen2.5-vl-7b-instruct",
             }
@@ -684,6 +761,9 @@ class ControlPanel(tk.Tk):
         folder = APP_DIR / str(self.config.get("output_dir", "clips"))
         folder.mkdir(parents=True, exist_ok=True)
         os.startfile(folder)
+
+    def open_contact_link(self) -> None:
+        webbrowser.open(REPO_URL)
 
     def append_log(self, message: str) -> None:
         self.log.configure(state=tk.NORMAL)

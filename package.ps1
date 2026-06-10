@@ -9,6 +9,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DistRoot = Join-Path $Root "dist"
 $PortableDir = Join-Path $DistRoot "Clip-Master-9000"
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$ExeName = "Clip Master 9000"
 
 Set-Location $Root
 
@@ -81,7 +82,7 @@ Write-Host "Installing PyInstaller..."
 $PyInstallerArgs = @(
     "--noconfirm",
     "--onedir",
-    "--name", "ClipMaster9000",
+    "--name", $ExeName,
     "--add-data", "config.example.json;.",
     "control_panel.py"
 )
@@ -102,4 +103,4 @@ if (Test-Path (Join-Path $Root "assets\app.ico")) {
 
 Write-Host ""
 Write-Host "Exe package created:"
-Write-Host "  $DistRoot\ClipMaster9000\ClipMaster9000.exe"
+Write-Host "  $DistRoot\$ExeName\$ExeName.exe"
