@@ -23,6 +23,13 @@ SCRIPT_PATH = APP_DIR / "live_video_interpreter.py"
 ICON_PATH = BUNDLE_DIR / "assets" / "app.ico"
 APP_NAME = "Clip Master 9000"
 REPO_URL = "https://github.com/ISuckatCod3/Clip-Master-9000"
+WORKER_ARG_SETS = {
+    "Start Live Clipper": [],
+    "Save OBS Replay": ["--save-obs-replay-buffer"],
+    "Start OBS Renamer": ["--watch-obs-clips"],
+    "Batch Rename Existing": ["--batch-rename-obs-clips"],
+    "Rename One Clip": ["--rename-file", "<selected-file>"],
+}
 
 DARK_COLORS = {
     "background": "#111318",
@@ -741,11 +748,7 @@ class ControlPanel(tk.Tk):
         self.start_worker_process(["--batch-rename-obs-clips"])
 
     def worker_command(self, args: list[str]) -> list[str]:
-        if getattr(sys, "frozen", False):
-            return [sys.executable, *args]
-        python_path = APP_DIR / ".venv" / "Scripts" / "python.exe"
-        python_exe = str(python_path) if python_path.exists() else sys.executable
-        return [python_exe, "-u", str(SCRIPT_PATH), *args]
+        return build_worker_command(args)
 
     def start_worker_process(self, args: list[str]) -> None:
         self.start_process(self.worker_command(args))
@@ -815,7 +818,28 @@ class ControlPanel(tk.Tk):
         self.destroy()
 
 
+def build_worker_command(args: list[str]) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *args]
+    python_path = APP_DIR / ".venv" / "Scripts" / "python.exe"
+    python_exe = str(python_path) if python_path.exists() else sys.executable
+    return [python_exe, "-u", str(SCRIPT_PATH), *args]
+
+
+def print_ui_action_audit() -> None:
+    print("UI action audit")
+    print("Local UI-only actions:")
+    print("  Refresh Devices, Use OBS Projector Mode, Refresh Audio, Use Line In + USB")
+    print("  Browse, Browse Vosk Model, Save Config, Clip Now, Stop, Open Clips Folder, Contact Me")
+    print("Worker actions:")
+    for label, args in WORKER_ARG_SETS.items():
+        print(f"  {label}: {' '.join(build_worker_command(args))}")
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--ui-action-audit"]:
+        print_ui_action_audit()
+        raise SystemExit(0)
     if len(sys.argv) > 1:
         from live_video_interpreter import main
 
