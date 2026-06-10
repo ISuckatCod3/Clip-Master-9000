@@ -79,10 +79,20 @@ if ($Target -eq "Portable") {
 Write-Host "Installing PyInstaller..."
 & $VenvPython -m pip install pyinstaller
 
+$ExistingExe = Join-Path (Join-Path $DistRoot $ExeName) "$ExeName.exe"
+if (Test-Path $ExistingExe) {
+    $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ExistingExe }
+    if ($running) {
+        $ids = ($running | Select-Object -ExpandProperty Id) -join ", "
+        throw "Close the running Clip Master 9000 app before packaging. Locked process id(s): $ids"
+    }
+}
+
 $PyInstallerArgs = @(
     "--noconfirm",
     "--onedir",
     "--name", $ExeName,
+    "--collect-all", "vosk",
     "--add-data", "config.example.json;.",
     "control_panel.py"
 )

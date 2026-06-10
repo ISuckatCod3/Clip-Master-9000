@@ -9,6 +9,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -35,6 +36,16 @@ try:
 except ImportError:
     KaldiRecognizer = None
     Model = None
+
+
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+
+def bundled_path(path: Path) -> Path:
+    if path.is_absolute() or path.exists():
+        return path
+    bundled = BUNDLE_DIR / path
+    return bundled if bundled.exists() else path
 
 
 START_REPLAY_BUFFER_COMMANDS = ("start replay buffer",)
@@ -1125,7 +1136,7 @@ def load_config(path: Path) -> AppConfig:
         ),
         voice=VoiceConfig(
             provider=str(voice_raw.get("provider", VoiceConfig.provider)),
-            vosk_model_path=Path(voice_raw.get("vosk_model_path", VoiceConfig.vosk_model_path)),
+            vosk_model_path=bundled_path(Path(voice_raw.get("vosk_model_path", VoiceConfig.vosk_model_path))),
             trigger_cooldown_seconds=float(
                 voice_raw.get("trigger_cooldown_seconds", VoiceConfig.trigger_cooldown_seconds)
             ),

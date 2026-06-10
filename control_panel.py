@@ -17,9 +17,10 @@ import sounddevice as sd
 
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 CONFIG_PATH = APP_DIR / "config.json"
 SCRIPT_PATH = APP_DIR / "live_video_interpreter.py"
-ICON_PATH = APP_DIR / "assets" / "app.ico"
+ICON_PATH = BUNDLE_DIR / "assets" / "app.ico"
 APP_NAME = "Clip Master 9000"
 REPO_URL = "https://github.com/ISuckatCod3/Clip-Master-9000"
 
