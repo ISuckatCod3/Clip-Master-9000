@@ -1,6 +1,24 @@
 # Clip Master 9000
 
-Voice-controlled OBS replay clipping, recording control, scene/source switching, and clip renaming.
+Are you a lazy AF "tech influcener"? 
+
+Do you think Python is a snek that lives in Asia? 
+
+If so, you probably shouldn't be giving people tech advice.. yet here we are. Today is your lucky day!
+
+ ▄█ ▄ █▀█  ▄▀▀▀▀█  ▄█      ▄▀▀▀▀█  ▄▀▀▀▀█  ▄▀█▄  ▄█▀█  ▄▀▀▀▀█       ▄▀▀▀▀▀█  ▄▀▀▀▀█     
+█ ██ ██ █ ▓ ▄▀▀▀▀ ▓ █     ▓ ▄▀▀▀▀ ▓ ▄▀█ █ ▓ ▄ █ █   █ ▓ ▄▀▀▀▀      ▀▀▀█ █▀▀ ▓ ▄▀█ █     
+█ █ █ █ █ ▒ ▄▀▀   ▒ ▄     ▒ ▄     ▒ █ █ █ ▒ ██ ▀ █▄ █ ▒ ▄▀▀           █ █   ▒ █ █ █     
+█  █ █  █ ░ █▄▄▄▄ ░ █▄▄▄▄ ░ █▄▄▄▄ ░ █▄▀ █ ░ █ ▀▀▀ █ █ ░ █▄▄▄▄         █ █   ░ █▄▀ █     
+█▄█   █▀  █▄▄▄▄▀  █▄▄▄▄▀  █▄▄▄▄▀  █▄▄▄▄▀  █▄█     █▀  █▄▄▄▄▀          █▀    █▄▄▄▄▀      
+ ▄▀▀▀▀█  ▄█      ▄█  ▄▀▀▀▀▓       ▄▀█▄  ▄█▀█  ▄▀▀▀▀█  ▄▀▀▀▀█  ▄▀▀▀▀▀█  ▄▀▀▀▀█  ▄▀▀▀▀▓  
+▓ ▄▀▀▀▀ ▓ █     █ █ ▓ ▄▀█ ▒      ▓ ▄ █ █   █ ▓ ▄▀█ █ █ ▄▀▀▀▀ ▀▀▀█ █▀▀ ▓ ▄▀▀▀▀ ▓ ▄▀█ ▒  
+▒ ▄     ▒ ▄     █ █ ▒ ▄▀▀▀       ▒ ██ ▀ █▄ █ ▒ ▀▀▀ █ ▀▄▄█▀▀▄    █ █   ▒ ▄▀▀   ▒ ▄▀▀░   
+░ █▄▄▄▄ ░ █▄▄▄▄ █ █ ░ █          ░ █ ▀▀▀ █ █ ░ █▀█ █ ▄▄▄▄▀ █    █ █   ░ █▄▄▄▄ ░ █▀▄ ▀▄ 
+█▄▄▄▄▀  █▄▄▄▄▀  █▀  █▄█          █▄█     █▀  █▄█ █▀  █▄▄▄▄▀     █▀    █▄▄▄▄▀  █▄█  ▀▄▄█
+
+
+ A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on, so if you're a busy boy, you can start/end replay buffer, save replay buffer, and switch scenes. 
 
 ## What It Does
 
@@ -35,6 +53,14 @@ git clone https://github.com/ISuckatCod3/Clip-Master-9000.git
 cd Clip-Master-9000
 .\build.bat
 ```
+
+One-line install from PowerShell is also supported:
+
+```powershell
+irm https://raw.githubusercontent.com/ISuckatCod3/Clip-Master-9000/main/install.ps1 | iex
+```
+
+That installs to `%LOCALAPPDATA%\Programs\Clip-Master-9000`, runs the same build checks, and creates desktop shortcuts for the UI and listener.
 
 `build.bat` runs the full local setup and verification sequence:
 
@@ -88,6 +114,22 @@ Save replay buffer once:
 .\save_obs_replay.bat
 ```
 
+## Package
+
+Portable zip:
+
+```powershell
+.\package.ps1 -Target Portable
+```
+
+PyInstaller app folder:
+
+```powershell
+.\package.ps1 -Target Exe
+```
+
+The portable package is the most reliable distribution format. MSI can be built from the portable folder with WiX Toolset when a formal installer is needed.
+
 ## Logs
 
 Launch scripts write logs under `logs\`.
@@ -101,7 +143,7 @@ Useful files:
 - `logs\obs_renamer.out.log`
 - `logs\obs_renamer.err.log`
 
-If a launcher fails, it pauses and points at the relevant error log.
+
 
 ## Config
 
@@ -137,11 +179,11 @@ Vosk is the default voice command engine. A normal `setup.bat` run installs the 
 models\vosk-model-small-en-us-0.15
 ```
 
-Only use `setup.ps1 -SkipVoskModel` if you plan to provide your own model path in `config.json`.
+Use `setup.ps1 -SkipVoskModel` if you plan to provide your own model path in `config.json`.
 
 ## LM Studio Setup
 
-LM Studio is optional and is used for local AI clip naming. Vosk still handles voice commands by default.
+LM Studio is optional and is used for local AI clip naming. The voice transcription is still handled by Vosk.
 
 1. Install LM Studio.
 2. Download a vision-capable Qwen model.
