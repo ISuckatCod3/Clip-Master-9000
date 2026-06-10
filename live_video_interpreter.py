@@ -782,6 +782,29 @@ class RollingClipper:
         except KeyboardInterrupt:
             print("\nStopped watching OBS clips.")
 
+    def batch_rename_obs_clips(self) -> None:
+        if not self.config.obs_output_dir:
+            raise ValueError("obs_output_dir is required for --batch-rename-obs-clips")
+        folder = self.config.obs_output_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        paths = [path for path in self._iter_clip_files(folder) if self._file_is_stable(path)]
+        if not paths:
+            print(f"No stable OBS clips found in {folder}.")
+            return
+        print(f"Batch renaming {len(paths)} OBS clip(s) in {folder}.")
+        renamed_count = 0
+        for path in paths:
+            if not path.exists():
+                continue
+            try:
+                renamed = self.rename_clip_file(path)
+                if renamed != path:
+                    renamed_count += 1
+                print(f"Renamed OBS clip: {renamed}")
+            except Exception as exc:
+                print(f"Could not rename {path}: {exc}")
+        print(f"Batch rename complete. Renamed {renamed_count} of {len(paths)} clip(s).")
+
     def rename_clip_file(self, path: Path) -> Path:
         if not path.exists():
             raise FileNotFoundError(path)
@@ -1303,6 +1326,11 @@ def main() -> None:
     parser.add_argument("--set-obs-output-dir", help="Set the OBS recording/replay folder to watch.")
     parser.add_argument("--watch-obs-clips", action="store_true", help="Watch OBS output folder and rename new clips.")
     parser.add_argument("--rename-existing", action="store_true", help="When watching, also rename existing clips.")
+    parser.add_argument(
+        "--batch-rename-obs-clips",
+        action="store_true",
+        help="Rename stable clips already present in the configured OBS output folder and exit.",
+    )
     parser.add_argument("--rename-file", help="Rename one existing video file using frame/audio context.")
     parser.add_argument("--save-obs-replay-buffer", action="store_true", help="Tell OBS to save the replay buffer.")
     parser.add_argument("--start-obs-replay-buffer", action="store_true", help="Tell OBS to start the replay buffer.")
@@ -1396,6 +1424,9 @@ def main() -> None:
         return
     if args.watch_obs_clips:
         clipper.watch_obs_folder(rename_existing=args.rename_existing)
+        return
+    if args.batch_rename_obs_clips:
+        clipper.batch_rename_obs_clips()
         return
     clipper.run()
 

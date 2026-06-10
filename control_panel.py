@@ -367,13 +367,16 @@ class ControlPanel(tk.Tk):
 
         obs_frame = ttk.LabelFrame(outer, text="OBS Clip Renamer")
         obs_frame.grid(row=3, column=0, sticky="ew", pady=8)
-        for column in range(4):
+        for column in range(5):
             obs_frame.columnconfigure(column, weight=1)
         ttk.Label(obs_frame, text="OBS recording or replay-buffer folder").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
         ttk.Entry(obs_frame, textvariable=self.obs_output_dir).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
         ttk.Button(obs_frame, text="Browse", command=self.browse_obs_folder).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
         ttk.Button(obs_frame, text="Rename One Clip", command=self.rename_one_clip).grid(row=1, column=2, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Button(obs_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(row=1, column=3, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(obs_frame, text="Batch Rename Existing", command=self.batch_rename_existing_clips).grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(obs_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(row=1, column=4, sticky="ew", padx=8, pady=(0, 8))
         ttk.Label(obs_frame, text="OBS host").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(obs_frame, textvariable=self.obs_host).grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
         ttk.Label(obs_frame, text="OBS port").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
@@ -714,6 +717,13 @@ class ControlPanel(tk.Tk):
             messagebox.showerror("OBS Folder Missing", "Choose your OBS recording or replay-buffer folder first.")
             return
         self.start_worker_process(["--watch-obs-clips"])
+
+    def batch_rename_existing_clips(self) -> None:
+        self.save_from_ui()
+        if not self.obs_output_dir.get():
+            messagebox.showerror("OBS Folder Missing", "Choose your OBS recording or replay-buffer folder first.")
+            return
+        self.start_worker_process(["--batch-rename-obs-clips"])
 
     def worker_command(self, args: list[str]) -> list[str]:
         if getattr(sys, "frozen", False):

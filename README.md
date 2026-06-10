@@ -112,6 +112,12 @@ OBS clip renamer:
 .\run_obs_renamer.bat
 ```
 
+Batch rename existing OBS clips:
+
+```powershell
+.\.venv\Scripts\python.exe .\live_video_interpreter.py --batch-rename-obs-clips
+```
+
 Save replay buffer once:
 
 ```powershell
