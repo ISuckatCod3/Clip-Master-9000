@@ -1,0 +1,7 @@
+openai>=1.88.0
+mss>=9.0.1
+numpy>=1.26.0
+opencv-python>=4.10.0
+sounddevice>=0.4.7
+vosk>=0.3.45
+obsws-python>=1.8.0

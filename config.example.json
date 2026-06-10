@@ -1,0 +1,68 @@
+{
+  "clip_seconds": 45,
+  "segment_seconds": 5,
+  "fps": 12,
+  "video_source": "screen",
+  "monitor_index": 1,
+  "camera_index": 0,
+  "camera_width": null,
+  "camera_height": null,
+  "video_device_name": null,
+  "audio_device_name": null,
+  "audio_device": null,
+  "audio_devices": [],
+  "audio_sample_rate": 16000,
+  "audio_channels": 1,
+  "command_check_seconds": 4,
+  "voice_commands": [
+    "clip that",
+    "save that",
+    "record that",
+    "capture that",
+    "start replay buffer",
+    "stop replay buffer",
+    "start recording",
+    "stop recording"
+  ],
+  "output_dir": "clips",
+  "buffer_dir": ".capture_buffer",
+  "obs_output_dir": null,
+  "obs_clip_extensions": [
+    ".mp4",
+    ".mkv",
+    ".mov",
+    ".flv"
+  ],
+  "file_stable_seconds": 3,
+  "poll_seconds": 2,
+  "ffmpeg_path": "ffmpeg",
+  "ai_provider": "openai",
+  "voice_command_provider": "vosk",
+  "openai": {
+    "api_key": null,
+    "api_key_env": "OPENAI_API_KEY",
+    "transcription_model": "gpt-4o-mini-transcribe",
+    "naming_model": "gpt-4.1-mini",
+    "max_frames_for_naming": 8
+  },
+  "lmstudio": {
+    "base_url": "http://localhost:1234/v1",
+    "api_key": null,
+    "api_key_env": "LMSTUDIO_API_KEY",
+    "vision_model": "qwen3-vl-2b"
+  },
+  "voice": {
+    "provider": "vosk",
+    "vosk_model_path": "models/vosk-model-small-en-us-0.15",
+    "trigger_cooldown_seconds": 2,
+    "clip_action": "obs_replay_buffer",
+    "enable_obs_scene_source_switching": false
+  },
+  "obs": {
+    "host": "localhost",
+    "port": 4455,
+    "password": null,
+    "password_env": "OBS_WEBSOCKET_PASSWORD",
+    "request_timeout_seconds": 5
+  }
+}
