@@ -787,23 +787,33 @@ class RollingClipper:
             raise ValueError("obs_output_dir is required for --batch-rename-obs-clips")
         folder = self.config.obs_output_dir
         folder.mkdir(parents=True, exist_ok=True)
-        paths = [path for path in self._iter_clip_files(folder) if self._file_is_stable(path)]
+        paths = self._iter_clip_files(folder)
         if not paths:
-            print(f"No stable OBS clips found in {folder}.")
+            print(f"No OBS clips found in {folder}.", flush=True)
             return
-        print(f"Batch renaming {len(paths)} OBS clip(s) in {folder}.")
+        print(f"Batch scanning {len(paths)} OBS clip(s) in {folder}.", flush=True)
         renamed_count = 0
-        for path in paths:
+        skipped_count = 0
+        for index, path in enumerate(paths, start=1):
             if not path.exists():
+                skipped_count += 1
                 continue
+            if not self._file_is_settled(path):
+                skipped_count += 1
+                print(f"[{index}/{len(paths)}] Skipping active or very recent file: {path.name}", flush=True)
+                continue
+            print(f"[{index}/{len(paths)}] Renaming {path.name}...", flush=True)
             try:
                 renamed = self.rename_clip_file(path)
                 if renamed != path:
                     renamed_count += 1
-                print(f"Renamed OBS clip: {renamed}")
+                print(f"[{index}/{len(paths)}] Result: {renamed.name}", flush=True)
             except Exception as exc:
-                print(f"Could not rename {path}: {exc}")
-        print(f"Batch rename complete. Renamed {renamed_count} of {len(paths)} clip(s).")
+                print(f"[{index}/{len(paths)}] Could not rename {path.name}: {exc}", flush=True)
+        print(
+            f"Batch rename complete. Renamed {renamed_count}, skipped {skipped_count}, scanned {len(paths)} clip(s).",
+            flush=True,
+        )
 
     def rename_clip_file(self, path: Path) -> Path:
         if not path.exists():
@@ -1108,6 +1118,13 @@ class RollingClipper:
         except FileNotFoundError:
             return False
         return first == second and first[0] > 0
+
+    def _file_is_settled(self, path: Path) -> bool:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return False
+        return stat.st_size > 0 and (time.time() - stat.st_mtime) >= self.config.file_stable_seconds
 
 
 def load_config(path: Path) -> AppConfig:

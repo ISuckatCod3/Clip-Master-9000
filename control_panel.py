@@ -723,6 +723,7 @@ class ControlPanel(tk.Tk):
         if not self.obs_output_dir.get():
             messagebox.showerror("OBS Folder Missing", "Choose your OBS recording or replay-buffer folder first.")
             return
+        self.append_log("Batch rename requested for existing OBS clips.")
         self.start_worker_process(["--batch-rename-obs-clips"])
 
     def worker_command(self, args: list[str]) -> list[str]:
