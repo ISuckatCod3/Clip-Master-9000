@@ -32,6 +32,7 @@ if ($Target -eq "Portable") {
 
     $items = @(
         ".venv",
+        "assets",
         "models",
         "config.example.json",
         "requirements.txt",
@@ -87,6 +88,14 @@ $PyInstallerArgs = @(
 
 if (-not $SkipVoskModel -and (Test-Path (Join-Path $Root "models"))) {
     $PyInstallerArgs += @("--add-data", "models;models")
+}
+
+if (Test-Path (Join-Path $Root "assets")) {
+    $PyInstallerArgs += @("--add-data", "assets;assets")
+}
+
+if (Test-Path (Join-Path $Root "assets\app.ico")) {
+    $PyInstallerArgs += @("--icon", "assets\app.ico")
 }
 
 & $VenvPython -m PyInstaller @PyInstallerArgs

@@ -3,7 +3,10 @@ __pycache__/
 *.pyc
 .capture_buffer/
 clips/
+build/
+dist/
 .env
 models/
 config.json
 *.log
+*.spec

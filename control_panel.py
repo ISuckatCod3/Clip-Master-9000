@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import ctypes
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -17,6 +18,21 @@ import sounddevice as sd
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
 SCRIPT_PATH = APP_DIR / "live_video_interpreter.py"
+ICON_PATH = APP_DIR / "assets" / "app.ico"
+
+DARK_COLORS = {
+    "background": "#111318",
+    "panel": "#181b22",
+    "panel_alt": "#20242d",
+    "field": "#0d0f14",
+    "border": "#343946",
+    "text": "#ffa844",
+    "muted": "#a7adbb",
+    "accent": "#2f8cff",
+    "accent_active": "#1f6fd1",
+    "danger": "#d64f4f",
+    "selection": "#d6cc3c",
+}
 
 
 DEFAULT_CONFIG = {
@@ -86,6 +102,10 @@ class ControlPanel(tk.Tk):
         self.title("Live Video Interpreter")
         self.geometry("980x720")
         self.minsize(860, 620)
+        self.configure(background=DARK_COLORS["background"])
+        self.apply_window_icon()
+        self.enable_windows_dark_title_bar()
+        self.configure_dark_style()
         self.process: subprocess.Popen[str] | None = None
         self.video_devices: list[str] = []
         self.audio_devices: list[tuple[int, str]] = []
@@ -129,6 +149,141 @@ class ControlPanel(tk.Tk):
         self.refresh_video_devices()
         self.load_audio_selection()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def apply_window_icon(self) -> None:
+        if ICON_PATH.exists():
+            try:
+                self.iconbitmap(default=str(ICON_PATH))
+            except tk.TclError:
+                pass
+
+    def enable_windows_dark_title_bar(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            value = ctypes.c_int(1)
+            for attribute in (20, 19):
+                result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd,
+                    attribute,
+                    ctypes.byref(value),
+                    ctypes.sizeof(value),
+                )
+                if result == 0:
+                    break
+        except Exception:
+            pass
+
+    def configure_dark_style(self) -> None:
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        colors = DARK_COLORS
+        self.option_add("*Font", ("Segoe UI", 10))
+        self.option_add("*Listbox.Background", colors["field"])
+        self.option_add("*Listbox.Foreground", colors["text"])
+        self.option_add("*Listbox.SelectBackground", colors["selection"])
+        self.option_add("*Listbox.SelectForeground", colors["text"])
+        self.option_add("*Listbox.HighlightColor", colors["accent"])
+        self.option_add("*Listbox.HighlightBackground", colors["border"])
+        self.option_add("*Text.Background", colors["field"])
+        self.option_add("*Text.Foreground", colors["text"])
+        self.option_add("*Text.InsertBackground", colors["text"])
+        self.option_add("*Text.SelectBackground", colors["selection"])
+        self.option_add("*Text.SelectForeground", colors["text"])
+
+        style.configure(".", background=colors["background"], foreground=colors["text"], fieldbackground=colors["field"])
+        style.configure("TFrame", background=colors["background"])
+        style.configure("Panel.TFrame", background=colors["panel"])
+        style.configure("TLabel", background=colors["background"], foreground=colors["text"])
+        style.configure("Muted.TLabel", background=colors["background"], foreground=colors["muted"])
+        style.configure(
+            "TLabelframe",
+            background=colors["panel"],
+            bordercolor=colors["border"],
+            darkcolor=colors["border"],
+            lightcolor=colors["border"],
+        )
+        style.configure("TLabelframe.Label", background=colors["panel"], foreground=colors["text"])
+        style.configure(
+            "TButton",
+            background=colors["panel_alt"],
+            foreground=colors["text"],
+            bordercolor=colors["border"],
+            focusthickness=1,
+            focuscolor=colors["accent"],
+            padding=(10, 6),
+        )
+        style.map(
+            "TButton",
+            background=[("active", colors["accent_active"]), ("pressed", colors["accent_active"])],
+            foreground=[("disabled", colors["muted"])],
+        )
+        style.configure(
+            "TEntry",
+            fieldbackground=colors["field"],
+            foreground=colors["text"],
+            insertcolor=colors["text"],
+            bordercolor=colors["border"],
+            lightcolor=colors["border"],
+            darkcolor=colors["border"],
+        )
+        style.map(
+            "TEntry",
+            fieldbackground=[("readonly", colors["field"]), ("disabled", colors["panel"])],
+            foreground=[("disabled", colors["muted"])],
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=colors["field"],
+            background=colors["panel_alt"],
+            foreground=colors["text"],
+            arrowcolor=colors["text"],
+            bordercolor=colors["border"],
+            lightcolor=colors["border"],
+            darkcolor=colors["border"],
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", colors["field"])],
+            foreground=[("readonly", colors["text"]), ("disabled", colors["muted"])],
+            selectbackground=[("readonly", colors["field"])],
+            selectforeground=[("readonly", colors["text"])],
+        )
+        style.configure("TCheckbutton", background=colors["panel"], foreground=colors["text"])
+        style.map(
+            "TCheckbutton",
+            background=[("active", colors["panel"])],
+            foreground=[("disabled", colors["muted"])],
+        )
+
+    def style_native_widgets(self) -> None:
+        colors = DARK_COLORS
+        self.audio_list.configure(
+            background=colors["field"],
+            foreground=colors["text"],
+            selectbackground=colors["selection"],
+            selectforeground=colors["text"],
+            highlightbackground=colors["border"],
+            highlightcolor=colors["accent"],
+            relief=tk.FLAT,
+            borderwidth=1,
+        )
+        self.log.configure(
+            background=colors["field"],
+            foreground=colors["text"],
+            insertbackground=colors["text"],
+            selectbackground=colors["selection"],
+            selectforeground=colors["text"],
+            highlightbackground=colors["border"],
+            highlightcolor=colors["accent"],
+            relief=tk.FLAT,
+            borderwidth=1,
+        )
 
     def build_ui(self) -> None:
         outer = ttk.Frame(self, padding=12)
@@ -266,6 +421,7 @@ class ControlPanel(tk.Tk):
         self.log = tk.Text(action_frame, height=12, wrap=tk.WORD)
         self.log.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         self.log.configure(state=tk.DISABLED)
+        self.style_native_widgets()
 
     def load_config(self) -> dict:
         if CONFIG_PATH.exists():
