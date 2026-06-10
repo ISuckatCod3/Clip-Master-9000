@@ -1,6 +1,7 @@
-# Clip Master 9000
 
 Are you a lazy AF "tech influcener"? 
+
+Do you farm clips by giving obvious tech tips and "hot takes"? 
 
 Do you think Python is a snek that lives in Asia? 
 
@@ -20,7 +21,8 @@ If so, you probably shouldn't be giving people tech advice.. yet here we are. To
 
 ```
 
- A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on, so if you're a busy boy, you can start/end replay buffer, save replay buffer, and switch scenes. 
+ A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on. You can start/end replay buffer, save replay buffer, and switch scenes all through voice intent. It also uses the VL + transcription model of your choice to analyze your clips
+ and recommend new file names so you can keep track of them. I currently have it setup to use LM Studio MCP server or OpenAI API. It can be easily retooled for any AI model run in various fashions. 
 
 ## What It Does
 
