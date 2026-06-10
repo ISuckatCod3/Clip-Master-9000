@@ -38,6 +38,8 @@
   "ffmpeg_path": "ffmpeg",
   "ai_provider": "openai",
   "voice_command_provider": "vosk",
+  "filename_prefix": "",
+  "filename_suffix": "",
   "openai": {
     "api_key": null,
     "api_key_env": "OPENAI_API_KEY",

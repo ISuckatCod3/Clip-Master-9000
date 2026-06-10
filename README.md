@@ -118,6 +118,8 @@ Batch rename existing OBS clips:
 .\.venv\Scripts\python.exe .\live_video_interpreter.py --batch-rename-obs-clips
 ```
 
+The renamer asks the configured vision model to read visible RTSS/MSI Afterburner-style overlay details and include clear PC specs in generated names. Filename prefix and suffix fields are available in the UI and apply to one-off, live watch, and batch renames.
+
 Save replay buffer once:
 
 ```powershell

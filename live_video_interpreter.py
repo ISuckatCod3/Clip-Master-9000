@@ -132,6 +132,8 @@ class AppConfig:
     ffmpeg_path: str = "ffmpeg"
     ai_provider: str = "openai"
     voice_command_provider: str = "vosk"
+    filename_prefix: str = ""
+    filename_suffix: str = ""
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     lmstudio: LMStudioConfig = field(default_factory=LMStudioConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
@@ -748,7 +750,7 @@ class RollingClipper:
             final_path = combined_video
 
         name = self._suggest_name(final_path, combined_audio)
-        safe_name = sanitize_filename(name or f"clip_{timestamp}")
+        safe_name = self._format_clip_filename(name or f"clip_{timestamp}")
         renamed = final_path.with_name(f"{safe_name}.mp4")
         renamed = unique_path(renamed)
         final_path.rename(renamed)
@@ -833,9 +835,17 @@ class RollingClipper:
         if not name:
             print("No generated title; leaving filename unchanged.")
             return path
-        target = unique_path(path.with_name(f"{sanitize_filename(name)}{path.suffix.lower()}"))
+        target = unique_path(path.with_name(f"{self._format_clip_filename(name)}{path.suffix.lower()}"))
         path.rename(target)
         return target
+
+    def _format_clip_filename(self, generated_name: str) -> str:
+        parts = [
+            sanitize_filename(self.config.filename_prefix),
+            sanitize_filename(generated_name),
+            sanitize_filename(self.config.filename_suffix),
+        ]
+        return "_".join(part for part in parts if part) or "clip"
 
     def _suggest_name(self, video_path: Path, audio_path: Path | None) -> str | None:
         transcript = self._transcribe_file(audio_path) if audio_path else ""
@@ -855,7 +865,11 @@ class RollingClipper:
                 "type": "input_text",
                 "text": (
                     "Name this screen recording clip. Return only a concise filesystem-safe "
-                    "title, 3 to 8 words, no extension. Use visible UI/context and transcript."
+                    "title, no extension. Use visible UI/context and transcript. If an RTSS, "
+                    "MSI Afterburner, or similar performance overlay is visible, read any clear "
+                    "PC specs or benchmark context from it and append compact specs to the title, "
+                    "such as GPU model, CPU model, resolution, FPS, or graphics preset. Do not "
+                    "invent specs that are not visible. Keep the full filename under 12 words."
                     f"\nTranscript:\n{transcript or '[no clear speech]'}"
                 ),
             }
@@ -886,7 +900,11 @@ class RollingClipper:
                 "type": "text",
                 "text": (
                     "Name this video clip. Return only a concise filesystem-safe title, "
-                    "3 to 8 words, no extension. Use visible video context and transcript."
+                    "no extension. Use visible video context and transcript. If an RTSS, MSI "
+                    "Afterburner, or similar performance overlay is visible, read any clear PC "
+                    "specs or benchmark context from it and append compact specs to the title, "
+                    "such as GPU model, CPU model, resolution, FPS, or graphics preset. Do not "
+                    "invent specs that are not visible. Keep the full filename under 12 words."
                     f"\nTranscript:\n{transcript or '[no transcript available]'}"
                 ),
             }
@@ -1161,6 +1179,8 @@ def load_config(path: Path) -> AppConfig:
         ffmpeg_path=str(raw.get("ffmpeg_path", AppConfig.ffmpeg_path)),
         ai_provider=str(raw.get("ai_provider", AppConfig.ai_provider)),
         voice_command_provider=str(raw.get("voice_command_provider", AppConfig.voice_command_provider)),
+        filename_prefix=str(raw.get("filename_prefix", AppConfig.filename_prefix)),
+        filename_suffix=str(raw.get("filename_suffix", AppConfig.filename_suffix)),
         openai=OpenAIConfig(
             api_key=openai_raw.get("api_key", OpenAIConfig.api_key),
             api_key_env=str(openai_raw.get("api_key_env", OpenAIConfig.api_key_env)),

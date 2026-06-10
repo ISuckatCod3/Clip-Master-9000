@@ -74,6 +74,8 @@ DEFAULT_CONFIG = {
     "ffmpeg_path": "ffmpeg",
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
+    "filename_prefix": "",
+    "filename_suffix": "",
     "openai": {
         "api_key": None,
         "api_key_env": "OPENAI_API_KEY",
@@ -126,6 +128,8 @@ class ControlPanel(tk.Tk):
         self.clip_seconds = tk.StringVar(value=str(self.config.get("clip_seconds", 45)))
         self.fps = tk.StringVar(value=str(self.config.get("fps", 12)))
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
+        self.filename_prefix = tk.StringVar(value=self.config.get("filename_prefix", ""))
+        self.filename_suffix = tk.StringVar(value=self.config.get("filename_suffix", ""))
         openai = self.config.get("openai", {})
         self.openai_api_key = tk.StringVar(value=openai.get("api_key") or "")
         self.openai_key_env = tk.StringVar(value=openai.get("api_key_env", "OPENAI_API_KEY"))
@@ -458,6 +462,14 @@ class ControlPanel(tk.Tk):
             text="Enable OBS scene/source voice switching",
             variable=self.enable_obs_scene_source_switching,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=8, pady=(0, 8))
+        ttk.Label(ai_frame, text="Filename prefix").grid(row=6, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(ai_frame, textvariable=self.filename_prefix).grid(
+            row=7, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(ai_frame, text="Filename suffix").grid(row=6, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(ai_frame, textvariable=self.filename_suffix).grid(
+            row=7, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
 
         action_frame = ttk.Frame(outer)
         action_frame.grid(row=5, column=0, sticky="nsew", pady=(8, 0))
@@ -534,6 +546,8 @@ class ControlPanel(tk.Tk):
             self.config["fps"] = int(self.fps.get())
             self.config["ffmpeg_path"] = self.ffmpeg_path.get() or "ffmpeg"
             self.config["ai_provider"] = self.ai_provider.get()
+            self.config["filename_prefix"] = self.filename_prefix.get()
+            self.config["filename_suffix"] = self.filename_suffix.get()
             self.config["openai"] = {
                 "api_key": self.openai_api_key.get() or None,
                 "api_key_env": self.openai_key_env.get() or "OPENAI_API_KEY",
