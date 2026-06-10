@@ -16,7 +16,7 @@ import mss
 import sounddevice as sd
 
 
-APP_DIR = Path(__file__).resolve().parent
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
 SCRIPT_PATH = APP_DIR / "live_video_interpreter.py"
 ICON_PATH = APP_DIR / "assets" / "app.ico"
@@ -684,11 +684,11 @@ class ControlPanel(tk.Tk):
         )
         if path:
             self.save_from_ui()
-            self.start_process([sys.executable, "-u", str(SCRIPT_PATH), "--rename-file", path])
+            self.start_worker_process(["--rename-file", path])
 
     def start_live_clipper(self) -> None:
         self.save_from_ui()
-        self.start_process([sys.executable, "-u", str(SCRIPT_PATH)])
+        self.start_worker_process([])
 
     def clip_now(self) -> None:
         if not self.process or self.process.poll() is not None:
@@ -705,14 +705,24 @@ class ControlPanel(tk.Tk):
         if self.process and self.process.poll() is None:
             self.clip_now()
             return
-        self.start_process([sys.executable, "-u", str(SCRIPT_PATH), "--save-obs-replay-buffer"])
+        self.start_worker_process(["--save-obs-replay-buffer"])
 
     def start_obs_renamer(self) -> None:
         self.save_from_ui()
         if not self.obs_output_dir.get():
             messagebox.showerror("OBS Folder Missing", "Choose your OBS recording or replay-buffer folder first.")
             return
-        self.start_process([sys.executable, "-u", str(SCRIPT_PATH), "--watch-obs-clips"])
+        self.start_worker_process(["--watch-obs-clips"])
+
+    def worker_command(self, args: list[str]) -> list[str]:
+        if getattr(sys, "frozen", False):
+            return [sys.executable, *args]
+        python_path = APP_DIR / ".venv" / "Scripts" / "python.exe"
+        python_exe = str(python_path) if python_path.exists() else sys.executable
+        return [python_exe, "-u", str(SCRIPT_PATH), *args]
+
+    def start_worker_process(self, args: list[str]) -> None:
+        self.start_process(self.worker_command(args))
 
     def start_process(self, command: list[str]) -> None:
         if self.process and self.process.poll() is None:
@@ -780,4 +790,9 @@ class ControlPanel(tk.Tk):
 
 
 if __name__ == "__main__":
-    ControlPanel().mainloop()
+    if len(sys.argv) > 1:
+        from live_video_interpreter import main
+
+        main()
+    else:
+        ControlPanel().mainloop()
