@@ -94,10 +94,11 @@ DEFAULT_CONFIG = {
         "base_url": "http://localhost:1234/v1",
         "api_key_env": "LMSTUDIO_API_KEY",
         "vision_model": "qwen3-vl-2b",
+        "transcription_model": "whisper-large-v3-turbo",
     },
     "voice": {
         "provider": "vosk",
-        "vosk_model_path": "models/vosk-model-small-en-us-0.15",
+        "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
         "trigger_cooldown_seconds": 2,
         "clip_action": "obs_replay_buffer",
         "enable_obs_scene_source_switching": False,
@@ -149,10 +150,13 @@ class ControlPanel(tk.Tk):
         self.lmstudio_api_key = tk.StringVar(value=lmstudio.get("api_key") or "")
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
         self.lmstudio_model = tk.StringVar(value=lmstudio.get("vision_model", "qwen2.5-vl-7b-instruct"))
+        self.lmstudio_transcription_model = tk.StringVar(
+            value=lmstudio.get("transcription_model", "whisper-large-v3-turbo")
+        )
         self.lmstudio_key_env = tk.StringVar(value=lmstudio.get("api_key_env", "LMSTUDIO_API_KEY"))
         voice = self.config.get("voice", {})
         self.voice_provider = tk.StringVar(value=self.config.get("voice_command_provider", voice.get("provider", "vosk")))
-        self.vosk_model_path = tk.StringVar(value=voice.get("vosk_model_path", "models/vosk-model-small-en-us-0.15"))
+        self.vosk_model_path = tk.StringVar(value=voice.get("vosk_model_path", "models/vosk-model-en-us-0.22-lgraph"))
         self.clip_action = tk.StringVar(value=voice.get("clip_action", "obs_replay_buffer"))
         self.enable_obs_scene_source_switching = tk.BooleanVar(
             value=bool(voice.get("enable_obs_scene_source_switching", False))
@@ -169,6 +173,7 @@ class ControlPanel(tk.Tk):
             self.obs_password = tk.StringVar(value=os.getenv("OBS_WEBSOCKET_PASSWORD", ""))
         self.status = tk.StringVar(value="Idle")
         self.ai_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
+        self.voice_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
 
         self.build_ui()
         self.update_ai_provider_fields()
@@ -176,6 +181,7 @@ class ControlPanel(tk.Tk):
         self.refresh_audio_devices()
         self.refresh_video_devices()
         self.load_audio_selection()
+        self.fit_window_to_content()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def apply_window_icon(self) -> None:
@@ -202,6 +208,20 @@ class ControlPanel(tk.Tk):
                     break
         except Exception:
             pass
+
+    def fit_window_to_content(self) -> None:
+        self.update_idletasks()
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        requested_width = max(980, self.winfo_reqwidth() + 24)
+        requested_height = max(720, self.winfo_reqheight() + 24)
+        max_width = max(860, screen_width - 80)
+        max_height = max(620, screen_height - 120)
+        width = min(requested_width, max_width)
+        height = min(requested_height, max_height)
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 3)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def configure_dark_style(self) -> None:
         style = ttk.Style(self)
@@ -362,7 +382,7 @@ class ControlPanel(tk.Tk):
         )
 
         ttk.Label(live_frame, text="Voice commands").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
+        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai", "lmstudio"), state="readonly").grid(
             row=5, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Label(live_frame, text="Clip action").grid(row=4, column=1, sticky="w", padx=8, pady=(4, 2))
@@ -470,17 +490,21 @@ class ControlPanel(tk.Tk):
         ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_base_url).grid(
             row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.lmstudio_fields, text="LM Studio model").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(self.lmstudio_fields, text="LM Studio naming model").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_model).grid(
             row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.lmstudio_fields, text="Token env var").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_key_env).grid(
+        ttk.Label(self.lmstudio_fields, text="LM Studio transcription model").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_transcription_model).grid(
             row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.lmstudio_fields, text="API key").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_api_key, show="*").grid(
+        ttk.Label(self.lmstudio_fields, text="Token env var").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_key_env).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.lmstudio_fields, text="API key").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_api_key, show="*").grid(
+            row=3, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 8)
         )
 
         ttk.Checkbutton(
@@ -519,12 +543,17 @@ class ControlPanel(tk.Tk):
     def update_ai_provider_fields(self) -> None:
         if not hasattr(self, "openai_fields") or not hasattr(self, "lmstudio_fields"):
             return
-        if self.ai_provider.get().lower() == "openai":
-            self.lmstudio_fields.grid_remove()
+        ai_provider = self.ai_provider.get().lower()
+        voice_provider = self.voice_provider.get().lower()
+        if ai_provider == "openai" or voice_provider == "openai":
             self.openai_fields.grid()
         else:
             self.openai_fields.grid_remove()
+
+        if ai_provider == "lmstudio" or voice_provider == "lmstudio":
             self.lmstudio_fields.grid()
+        else:
+            self.lmstudio_fields.grid_remove()
 
     def load_config(self) -> dict:
         if CONFIG_PATH.exists():
@@ -578,11 +607,12 @@ class ControlPanel(tk.Tk):
                 "api_key": self.lmstudio_api_key.get() or None,
                 "api_key_env": self.lmstudio_key_env.get() or "LMSTUDIO_API_KEY",
                 "vision_model": self.lmstudio_model.get() or "qwen2.5-vl-7b-instruct",
+                "transcription_model": self.lmstudio_transcription_model.get() or "whisper-large-v3-turbo",
             }
             self.config["voice_command_provider"] = self.voice_provider.get()
             self.config["voice"] = {
                 "provider": self.voice_provider.get(),
-                "vosk_model_path": self.vosk_model_path.get() or "models/vosk-model-small-en-us-0.15",
+                "vosk_model_path": self.vosk_model_path.get() or "models/vosk-model-en-us-0.22-lgraph",
                 "trigger_cooldown_seconds": 2,
                 "clip_action": self.clip_action.get(),
                 "enable_obs_scene_source_switching": self.enable_obs_scene_source_switching.get(),
@@ -719,6 +749,7 @@ class ControlPanel(tk.Tk):
             filetypes=(("Video files", "*.mp4 *.mkv *.mov *.flv"), ("All files", "*.*")),
         )
         if path:
+            self.obs_output_dir.set(str(Path(path).parent))
             self.save_from_ui()
             self.start_worker_process(["--rename-file", path])
 

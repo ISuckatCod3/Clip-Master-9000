@@ -11,8 +11,21 @@ $PortableDir = Join-Path $DistRoot "Clip-Master-9000"
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
 $ExeName = "Clip Master 9000"
 
+function Show-ClipMasterLogo {
+    Write-Host @'
+   ____ _ _        __  __           _              ___   ___   ___   ___
+  / ___| (_)_ __  |  \/  | __ _ ___| |_ ___ _ __  / _ \ / _ \ / _ \ / _ \
+ | |   | | | '_ \ | |\/| |/ _` / __| __/ _ \ '__| \_, /| | | | | | | | | |
+ | |___| | | |_) || |  | | (_| \__ \ ||  __/ |      / / | |_| | |_| | |_| |
+  \____|_|_| .__/ |_|  |_|\__,_|___/\__\___|_|     /_/   \___/ \___/ \___/
+           |_|
+'@
+    Write-Host ""
+}
+
 Set-Location $Root
 
+Show-ClipMasterLogo
 Write-Host "Packaging Clip Master 9000 ($Target)"
 Write-Host "===================================="
 Write-Host ""

@@ -7,7 +7,9 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
 $ConfigPath = Join-Path $Root "config.json"
 $ExampleConfigPath = Join-Path $Root "config.example.json"
-$ModelName = "vosk-model-small-en-us-0.15"
+$PreviousDefaultModelPath = "models/vosk-model-small-en-us-0.15"
+$ModelName = "vosk-model-en-us-0.22-lgraph"
+$DefaultModelPath = "models/$ModelName"
 $ModelDir = Join-Path $Root "models\$ModelName"
 $ModelZip = Join-Path $Root "models\$ModelName.zip"
 $ModelUrl = "https://alphacephei.com/vosk/models/$ModelName.zip"
@@ -28,15 +30,26 @@ if (-not (Test-Path $ConfigPath)) {
     Copy-Item -Path $ExampleConfigPath -Destination $ConfigPath
 }
 
+$config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+if (-not $config.voice) {
+    $config | Add-Member -MemberType NoteProperty -Name "voice" -Value ([pscustomobject]@{}) -Force
+}
+$configuredModelPath = [string]$config.voice.vosk_model_path
+if ([string]::IsNullOrWhiteSpace($configuredModelPath) -or $configuredModelPath -eq $PreviousDefaultModelPath) {
+    Write-Host "Updating config.json to use the larger default Vosk model..."
+    $config.voice | Add-Member -MemberType NoteProperty -Name "vosk_model_path" -Value $DefaultModelPath -Force
+    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPath -Encoding UTF8
+}
+
 if ($SkipVoskModel) {
     Write-Host "Skipping Vosk model download because -SkipVoskModel was provided."
 } elseif (-not (Test-Path $ModelDir)) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Root "models") | Out-Null
     if (-not (Test-Path $ModelZip)) {
-        Write-Host "Downloading default Vosk voice model..."
+        Write-Host "Downloading larger default Vosk voice model..."
         Invoke-WebRequest -Uri $ModelUrl -OutFile $ModelZip
     }
-    Write-Host "Extracting default Vosk voice model..."
+    Write-Host "Extracting larger default Vosk voice model..."
     Expand-Archive -Path $ModelZip -DestinationPath (Join-Path $Root "models") -Force
 }
 

@@ -51,11 +51,12 @@
     "base_url": "http://localhost:1234/v1",
     "api_key": null,
     "api_key_env": "LMSTUDIO_API_KEY",
-    "vision_model": "qwen3-vl-2b"
+    "vision_model": "qwen3-vl-2b",
+    "transcription_model": "whisper-large-v3-turbo"
   },
   "voice": {
     "provider": "vosk",
-    "vosk_model_path": "models/vosk-model-small-en-us-0.15",
+    "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
     "trigger_cooldown_seconds": 2,
     "clip_action": "obs_replay_buffer",
     "enable_obs_scene_source_switching": false

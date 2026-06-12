@@ -88,9 +88,9 @@ Manual setup is also available:
 - create `.venv`
 - install Python dependencies, including Vosk
 - create `config.json` from `config.example.json`
-- download and extract the small English Vosk voice model
+- download and extract the larger English Vosk voice model
 
-The Vosk model used by default is `vosk-model-small-en-us-0.15`, listed on the official Vosk model page.
+The Vosk model used by default is `vosk-model-en-us-0.22-lgraph`, listed on the official Vosk model page. It is larger than the tiny/small model and is bundled for more reliable command recognition.
 
 ## Run
 
@@ -116,6 +116,18 @@ Batch rename existing OBS clips:
 
 ```powershell
 .\.venv\Scripts\python.exe .\live_video_interpreter.py --batch-rename-obs-clips
+```
+
+Batch rename a specific folder without changing `config.json`:
+
+```powershell
+.\.venv\Scripts\python.exe .\live_video_interpreter.py --batch-rename-obs-clips --rename-folder "D:\OBS\Replays"
+```
+
+Rename one clip directly:
+
+```powershell
+.\.venv\Scripts\python.exe .\live_video_interpreter.py --rename-file "D:\OBS\Replays\clip.mp4"
 ```
 
 The renamer asks the configured vision model to read visible RTSS/MSI Afterburner-style overlay details and include clear PC specs in generated names. Filename prefix and suffix fields are available in the UI and apply to one-off, live watch, and batch renames.
@@ -178,7 +190,7 @@ Voice settings:
 ```json
 "voice": {
   "provider": "vosk",
-  "vosk_model_path": "models/vosk-model-small-en-us-0.15",
+  "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
   "trigger_cooldown_seconds": 2,
   "clip_action": "obs_replay_buffer",
   "enable_obs_scene_source_switching": false
@@ -188,7 +200,7 @@ Voice settings:
 Vosk is the default voice command engine. A normal `setup.bat` run installs the `vosk` Python package and downloads the default model into:
 
 ```text
-models\vosk-model-small-en-us-0.15
+models\vosk-model-en-us-0.22-lgraph
 ```
 
 Use `setup.ps1 -SkipVoskModel` if you plan to provide your own model path in `config.json`.
@@ -203,19 +215,23 @@ Matched phrases print the action that would run and exit with code `0`. Non-comm
 
 ## LM Studio Setup
 
-LM Studio is optional and is used for local AI clip naming. The voice transcription is still handled by Vosk.
+LM Studio is optional and can be used for local AI clip naming and local voice-command transcription through its OpenAI-compatible server.
 
 1. Install LM Studio.
-2. Download a vision-capable Qwen model.
-3. Start the LM Studio local server.
-4. Confirm the server URL is:
+2. Download a vision-capable model for clip naming.
+3. Download a local transcription model for voice commands if you want LM Studio to handle speech recognition.
+4. Start the LM Studio local server.
+5. Confirm the server URL is:
 
 ```text
 http://localhost:1234/v1
 ```
 
-5. Set `ai_provider` to `lmstudio` in `config.json`.
-6. Set `lmstudio.vision_model` to the model you loaded in LM Studio.
+6. Set `ai_provider` to `lmstudio` in `config.json` if LM Studio should name clips.
+7. Set `voice_command_provider` to `lmstudio` if LM Studio should transcribe voice commands instead of Vosk or OpenAI.
+8. Set `lmstudio.vision_model` and `lmstudio.transcription_model` to the models you loaded in LM Studio.
+
+The LM Studio API key can stay blank for the local server; the app supplies a local placeholder automatically.
 
 Recommended models:
 
@@ -230,7 +246,8 @@ Example:
   "base_url": "http://localhost:1234/v1",
   "api_key": null,
   "api_key_env": "LMSTUDIO_API_KEY",
-  "vision_model": "qwen3-vl-2b"
+  "vision_model": "qwen3-vl-2b",
+  "transcription_model": "whisper-large-v3-turbo"
 }
 ```
 
@@ -273,7 +290,7 @@ Then use explicit commands:
 - `scene Intro`
 - `source Elgato`
 
-The app reads OBS scene names and scene-item source names through WebSocket. If a name is ambiguous, it refuses to switch instead of guessing.
+`Elgato` is only an example source name. The app reads your actual OBS scene names and scene-item source names through WebSocket, then matches the spoken target against those names. If a name is ambiguous, it refuses to switch instead of guessing.
 
 ## CLI Helpers
 

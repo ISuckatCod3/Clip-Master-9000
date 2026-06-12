@@ -118,12 +118,13 @@ class LMStudioConfig:
     api_key: str | None = None
     api_key_env: str = "LMSTUDIO_API_KEY"
     vision_model: str = "qwen2.5-vl-7b-instruct"
+    transcription_model: str = "whisper-large-v3-turbo"
 
 
 @dataclass
 class VoiceConfig:
     provider: str = "vosk"
-    vosk_model_path: Path = Path("models/vosk-model-small-en-us-0.15")
+    vosk_model_path: Path = Path("models/vosk-model-en-us-0.22-lgraph")
     trigger_cooldown_seconds: float = 2.0
     clip_action: str = "obs_replay_buffer"
     enable_obs_scene_source_switching: bool = False
@@ -214,9 +215,7 @@ class RollingClipper:
         return OpenAI(api_key=token)
 
     def _build_lmstudio_client(self) -> OpenAI | None:
-        token = self.config.lmstudio.api_key or os.getenv(self.config.lmstudio.api_key_env)
-        if not token:
-            return None
+        token = self.config.lmstudio.api_key or os.getenv(self.config.lmstudio.api_key_env) or "lm-studio"
         return OpenAI(base_url=self.config.lmstudio.base_url, api_key=token)
 
     def run(self) -> None:
@@ -237,8 +236,10 @@ class RollingClipper:
                 "Live Video Interpreter is running. Say 'clip that', 'start replay buffer', "
                 "'stop replay buffer', 'start recording', or 'stop recording'. Press Ctrl+C to stop."
             )
-        if self.config.voice_command_provider.lower() != "vosk" and self.openai_client is None:
-            print("Voice command transcription is disabled because OPENAI_API_KEY is not set. Use the UI Clip Now button.")
+        if self.config.voice_command_provider.lower() in {"openai", "lmstudio"}:
+            client, _model, label = self._transcription_client()
+            if client is None:
+                print(f"Voice command transcription is disabled because {label} is not configured. Use the UI Clip Now button.")
         try:
             while True:
                 time.sleep(0.5)
@@ -444,17 +445,21 @@ class RollingClipper:
         if provider == "vosk":
             self._vosk_command_loop()
             return
-        self._openai_command_loop()
+        if provider in {"openai", "lmstudio"}:
+            self._api_command_loop(provider)
+            return
+        print(f"Unknown voice command provider: {self.config.voice_command_provider}")
 
-    def _openai_command_loop(self) -> None:
+    def _api_command_loop(self, provider: str) -> None:
+        client, model, label = self._transcription_client(provider)
         while not self.stop_event.is_set():
             time.sleep(self.config.command_check_seconds)
-            if self.openai_client is None:
+            if client is None:
                 continue
             chunks = self._drain_recent_audio()
             if not chunks:
                 continue
-            text = self._transcribe_audio_array(chunks, prefix="command")
+            text = self._transcribe_audio_array(chunks, prefix="command", client=client, model=model, label=label)
             if not text:
                 continue
             normalized = text.lower()
@@ -800,10 +805,10 @@ class RollingClipper:
         except KeyboardInterrupt:
             print("\nStopped watching OBS clips.")
 
-    def batch_rename_obs_clips(self) -> None:
-        if not self.config.obs_output_dir:
+    def batch_rename_obs_clips(self, folder: Path | None = None) -> None:
+        folder = folder or self.config.obs_output_dir
+        if not folder:
             raise ValueError("obs_output_dir is required for --batch-rename-obs-clips")
-        folder = self.config.obs_output_dir
         folder.mkdir(parents=True, exist_ok=True)
         paths = self._iter_clip_files(folder)
         if not paths:
@@ -812,6 +817,7 @@ class RollingClipper:
         print(f"Batch scanning {len(paths)} OBS clip(s) in {folder}.", flush=True)
         renamed_count = 0
         skipped_count = 0
+        failed_count = 0
         for index, path in enumerate(paths, start=1):
             if not path.exists():
                 skipped_count += 1
@@ -827,9 +833,11 @@ class RollingClipper:
                     renamed_count += 1
                 print(f"[{index}/{len(paths)}] Result: {renamed.name}", flush=True)
             except Exception as exc:
+                failed_count += 1
                 print(f"[{index}/{len(paths)}] Could not rename {path.name}: {exc}", flush=True)
         print(
-            f"Batch rename complete. Renamed {renamed_count}, skipped {skipped_count}, scanned {len(paths)} clip(s).",
+            "Batch rename complete. "
+            f"Renamed {renamed_count}, skipped {skipped_count}, failed {failed_count}, scanned {len(paths)} clip(s).",
             flush=True,
         )
 
@@ -857,9 +865,9 @@ class RollingClipper:
 
     def _format_clip_filename(self, generated_name: str) -> str:
         parts = [
-            sanitize_filename(self.config.filename_prefix),
+            sanitize_filename(self.config.filename_prefix, fallback=""),
             sanitize_filename(generated_name),
-            sanitize_filename(self.config.filename_suffix),
+            sanitize_filename(self.config.filename_suffix, fallback=""),
         ]
         return "_".join(part for part in parts if part) or "clip"
 
@@ -941,28 +949,50 @@ class RollingClipper:
             print(f"LM Studio naming failed: {exc}")
             return None
 
-    def _transcribe_file(self, audio_path: Path) -> str:
-        if self.openai_client is None or not audio_path.exists() or audio_path.stat().st_size == 0:
+    def _transcription_client(self, provider: str | None = None) -> tuple[OpenAI | None, str, str]:
+        selected = (provider or self.config.voice_command_provider).lower()
+        if selected == "lmstudio":
+            return self.lmstudio_client, self.config.lmstudio.transcription_model, "LM Studio"
+        return self.openai_client, self.config.openai.transcription_model, "OpenAI"
+
+    def _transcribe_file(
+        self,
+        audio_path: Path,
+        client: OpenAI | None = None,
+        model: str | None = None,
+        label: str = "OpenAI",
+    ) -> str:
+        selected_client = client or self.openai_client
+        selected_model = model or self.config.openai.transcription_model
+        if selected_client is None or not audio_path.exists() or audio_path.stat().st_size == 0:
             return ""
         try:
             with audio_path.open("rb") as audio_file:
-                result = self.openai_client.audio.transcriptions.create(
-                    model=self.config.openai.transcription_model,
+                result = selected_client.audio.transcriptions.create(
+                    model=selected_model,
                     file=audio_file,
                 )
             return getattr(result, "text", "") or ""
         except Exception as exc:
-            print(f"OpenAI transcription failed: {exc}")
+            print(f"{label} transcription failed: {exc}")
             return ""
 
-    def _transcribe_audio_array(self, chunks: list[np.ndarray], prefix: str) -> str:
-        if self.openai_client is None:
+    def _transcribe_audio_array(
+        self,
+        chunks: list[np.ndarray],
+        prefix: str,
+        client: OpenAI | None = None,
+        model: str | None = None,
+        label: str = "OpenAI",
+    ) -> str:
+        selected_client = client or self.openai_client
+        if selected_client is None:
             return ""
         with tempfile.NamedTemporaryFile(prefix=f"{prefix}_", suffix=".wav", delete=False) as temp:
             temp_path = Path(temp.name)
         try:
             self._write_wav(temp_path, chunks)
-            return self._transcribe_file(temp_path)
+            return self._transcribe_file(temp_path, client=selected_client, model=model, label=label)
         finally:
             temp_path.unlink(missing_ok=True)
 
@@ -1209,6 +1239,9 @@ def load_config(path: Path) -> AppConfig:
             api_key=lmstudio_raw.get("api_key", LMStudioConfig.api_key),
             api_key_env=str(lmstudio_raw.get("api_key_env", LMStudioConfig.api_key_env)),
             vision_model=str(lmstudio_raw.get("vision_model", LMStudioConfig.vision_model)),
+            transcription_model=str(
+                lmstudio_raw.get("transcription_model", LMStudioConfig.transcription_model)
+            ),
         ),
         voice=VoiceConfig(
             provider=str(voice_raw.get("provider", VoiceConfig.provider)),
@@ -1263,11 +1296,11 @@ def sample_video_frames(video_path: Path, max_frames: int) -> list[str]:
     return frames
 
 
-def sanitize_filename(value: str) -> str:
+def sanitize_filename(value: str, fallback: str = "clip") -> str:
     value = re.sub(r"[^\w\s.-]", "", value, flags=re.UNICODE)
     value = re.sub(r"\s+", "_", value.strip())
     value = value.strip("._-")
-    return value[:80] or "clip"
+    return value[:80] or fallback
 
 
 def normalize_obs_name(value: str) -> str:
@@ -1384,6 +1417,10 @@ def main() -> None:
         action="store_true",
         help="Rename stable clips already present in the configured OBS output folder and exit.",
     )
+    parser.add_argument(
+        "--rename-folder",
+        help="Folder to batch rename with --batch-rename-obs-clips instead of the configured OBS output folder.",
+    )
     parser.add_argument("--rename-file", help="Rename one existing video file using frame/audio context.")
     parser.add_argument("--save-obs-replay-buffer", action="store_true", help="Tell OBS to save the replay buffer.")
     parser.add_argument("--start-obs-replay-buffer", action="store_true", help="Tell OBS to start the replay buffer.")
@@ -1499,7 +1536,7 @@ def main() -> None:
         clipper.watch_obs_folder(rename_existing=args.rename_existing)
         return
     if args.batch_rename_obs_clips:
-        clipper.batch_rename_obs_clips()
+        clipper.batch_rename_obs_clips(Path(args.rename_folder) if args.rename_folder else None)
         return
     clipper.run()
 
