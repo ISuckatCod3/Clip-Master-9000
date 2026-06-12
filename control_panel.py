@@ -305,6 +305,12 @@ class ControlPanel(tk.Tk):
             selectforeground=[("readonly", colors["text"])],
         )
         style.configure("TCheckbutton", background=colors["panel"], foreground=colors["text"])
+        style.configure(
+            "DangerBold.TLabel",
+            background=colors["panel"],
+            foreground=colors["danger"],
+            font=("Segoe UI", 10, "bold"),
+        )
         style.map(
             "TCheckbutton",
             background=[("active", colors["panel"])],
@@ -399,11 +405,18 @@ class ControlPanel(tk.Tk):
         ttk.Label(live_frame, text="Select one or more input devices to monitor").grid(
             row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
         )
+        live_naming_frame = ttk.Frame(live_frame)
+        live_naming_frame.grid(row=6, column=3, sticky="w", padx=8, pady=(4, 2))
         ttk.Checkbutton(
-            live_frame,
+            live_naming_frame,
             text="Name live clips immediately",
             variable=self.name_live_clips,
-        ).grid(row=6, column=3, sticky="w", padx=8, pady=(4, 2))
+        ).pack(anchor="w")
+        ttk.Label(
+            live_naming_frame,
+            text="I also like to live dangerously",
+            style="DangerBold.TLabel",
+        ).pack(anchor="w")
         self.audio_list = tk.Listbox(live_frame, height=5, selectmode=tk.MULTIPLE, exportselection=False)
         self.audio_list.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
         audio_buttons = ttk.Frame(live_frame)

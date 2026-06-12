@@ -1009,7 +1009,9 @@ class RollingClipper:
         while True:
             try:
                 item = self.audio_chunks.get_nowait()
-                chunks.append(item[1] if isinstance(item, tuple) and len(item) == 2 else item)
+                chunk = item[1] if isinstance(item, tuple) and len(item) == 2 else item
+                if isinstance(chunk, np.ndarray):
+                    chunks.append(chunk)
             except queue.Empty:
                 break
         return chunks
