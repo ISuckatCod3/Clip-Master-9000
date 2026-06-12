@@ -38,6 +38,7 @@
   "ffmpeg_path": "ffmpeg",
   "ai_provider": "openai",
   "voice_command_provider": "vosk",
+  "name_live_clips": false,
   "filename_prefix": "",
   "filename_suffix": "",
   "openai": {

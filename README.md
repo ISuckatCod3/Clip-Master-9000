@@ -30,6 +30,7 @@ If so, you probably shouldn't be giving people tech advice.. yet here we are. To
 - Starts and stops the OBS replay buffer by voice.
 - Starts and stops OBS recording by voice.
 - Optionally switches OBS scenes or sources by voice.
+- Saves local live-buffer clips with default timestamp names by default.
 - Watches an OBS output folder and renames clips with AI-generated names.
 
 ## Requirements
@@ -130,7 +131,9 @@ Rename one clip directly:
 .\.venv\Scripts\python.exe .\live_video_interpreter.py --rename-file "D:\OBS\Replays\clip.mp4"
 ```
 
-The renamer asks the configured vision model to read visible RTSS/MSI Afterburner-style overlay details and include clear PC specs in generated names. Filename prefix and suffix fields are available in the UI and apply to one-off, live watch, and batch renames.
+Live clipping is uncoupled from AI naming by default: local-buffer clips save immediately with default timestamp names such as `clip_2026-06-12_12-34-56.mp4`. Turn on `Name live clips immediately` in the UI only if you want live clips renamed as they are created.
+
+The renamer asks the configured vision model to read visible RTSS/MSI Afterburner-style overlay details and include clear PC specs in generated names. Filename prefix and suffix fields are available in the UI and apply to AI naming flows: one-off rename, live watch, batch rename, and optional immediate live-clip naming.
 
 Save replay buffer once:
 
@@ -176,6 +179,7 @@ Edit `config.json`.
 Important fields:
 
 ```json
+"name_live_clips": false,
 "obs": {
   "host": "localhost",
   "port": 4455,

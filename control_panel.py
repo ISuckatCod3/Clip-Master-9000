@@ -81,6 +81,7 @@ DEFAULT_CONFIG = {
     "ffmpeg_path": "ffmpeg",
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
+    "name_live_clips": False,
     "filename_prefix": "",
     "filename_suffix": "",
     "openai": {
@@ -136,6 +137,7 @@ class ControlPanel(tk.Tk):
         self.clip_seconds = tk.StringVar(value=str(self.config.get("clip_seconds", 45)))
         self.fps = tk.StringVar(value=str(self.config.get("fps", 12)))
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
+        self.name_live_clips = tk.BooleanVar(value=bool(self.config.get("name_live_clips", False)))
         self.filename_prefix = tk.StringVar(value=self.config.get("filename_prefix", ""))
         self.filename_suffix = tk.StringVar(value=self.config.get("filename_suffix", ""))
         openai = self.config.get("openai", {})
@@ -397,6 +399,11 @@ class ControlPanel(tk.Tk):
         ttk.Label(live_frame, text="Select one or more input devices to monitor").grid(
             row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
         )
+        ttk.Checkbutton(
+            live_frame,
+            text="Name live clips immediately",
+            variable=self.name_live_clips,
+        ).grid(row=6, column=3, sticky="w", padx=8, pady=(4, 2))
         self.audio_list = tk.Listbox(live_frame, height=5, selectmode=tk.MULTIPLE, exportselection=False)
         self.audio_list.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
         audio_buttons = ttk.Frame(live_frame)
@@ -593,6 +600,7 @@ class ControlPanel(tk.Tk):
             self.config["fps"] = int(self.fps.get())
             self.config["ffmpeg_path"] = self.ffmpeg_path.get() or "ffmpeg"
             self.config["ai_provider"] = self.ai_provider.get()
+            self.config["name_live_clips"] = self.name_live_clips.get()
             self.config["filename_prefix"] = self.filename_prefix.get()
             self.config["filename_suffix"] = self.filename_suffix.get()
             self.config["openai"] = {

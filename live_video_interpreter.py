@@ -171,6 +171,7 @@ class AppConfig:
     ffmpeg_path: str = "ffmpeg"
     ai_provider: str = "openai"
     voice_command_provider: str = "vosk"
+    name_live_clips: bool = False
     filename_prefix: str = ""
     filename_suffix: str = ""
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
@@ -770,6 +771,13 @@ class RollingClipper:
             combined_audio = None
             final_path = combined_video
 
+        if not self.config.name_live_clips:
+            if final_path == draft_path:
+                return final_path
+            default_path = unique_path(draft_path)
+            final_path.rename(default_path)
+            return default_path
+
         name = self._suggest_name(final_path, combined_audio)
         safe_name = self._format_clip_filename(name or f"clip_{timestamp}")
         renamed = final_path.with_name(f"{safe_name}.mp4")
@@ -1225,6 +1233,7 @@ def load_config(path: Path) -> AppConfig:
         ffmpeg_path=str(raw.get("ffmpeg_path", AppConfig.ffmpeg_path)),
         ai_provider=str(raw.get("ai_provider", AppConfig.ai_provider)),
         voice_command_provider=str(raw.get("voice_command_provider", AppConfig.voice_command_provider)),
+        name_live_clips=bool(raw.get("name_live_clips", AppConfig.name_live_clips)),
         filename_prefix=str(raw.get("filename_prefix", AppConfig.filename_prefix)),
         filename_suffix=str(raw.get("filename_suffix", AppConfig.filename_suffix)),
         openai=OpenAIConfig(
