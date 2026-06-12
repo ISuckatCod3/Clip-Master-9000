@@ -317,7 +317,7 @@ class ControlPanel(tk.Tk):
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill=tk.BOTH, expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(5, weight=1)
+        outer.rowconfigure(3, weight=1)
 
         header = ttk.Frame(outer)
         header.grid(row=0, column=0, sticky="ew")
@@ -325,80 +325,114 @@ class ControlPanel(tk.Tk):
         ttk.Label(header, text=APP_NAME, font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.status).grid(row=0, column=1, sticky="e")
 
-        device_frame = ttk.LabelFrame(outer, text="Capture")
-        device_frame.grid(row=1, column=0, sticky="ew", pady=(12, 8))
+        live_frame = ttk.LabelFrame(outer, text="Live Clipping")
+        live_frame.grid(row=1, column=0, sticky="ew", pady=(12, 8))
         for column in range(4):
-            device_frame.columnconfigure(column, weight=1)
+            live_frame.columnconfigure(column, weight=1)
 
-        ttk.Label(device_frame, text="Video source").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        ttk.Label(live_frame, text="Video source").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
         source_combo = ttk.Combobox(
-            device_frame,
+            live_frame,
             textvariable=self.video_source,
             values=("directshow", "screen", "camera"),
             state="readonly",
         )
         source_combo.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
 
-        ttk.Label(device_frame, text="Named video device").grid(row=0, column=1, columnspan=2, sticky="w", padx=8, pady=(8, 2))
-        self.video_combo = ttk.Combobox(device_frame, textvariable=self.video_device, values=())
+        ttk.Label(live_frame, text="Named video device").grid(row=0, column=1, columnspan=2, sticky="w", padx=8, pady=(8, 2))
+        self.video_combo = ttk.Combobox(live_frame, textvariable=self.video_device, values=())
         self.video_combo.grid(row=1, column=1, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
 
-        ttk.Button(device_frame, text="Refresh Devices", command=self.refresh_all_devices).grid(
+        ttk.Button(live_frame, text="Refresh Devices", command=self.refresh_all_devices).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(device_frame, text="Monitor / OBS projector").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
-        self.monitor_combo = ttk.Combobox(device_frame, textvariable=self.monitor, values=(), state="readonly")
+        ttk.Label(live_frame, text="Monitor / OBS projector").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
+        self.monitor_combo = ttk.Combobox(live_frame, textvariable=self.monitor, values=(), state="readonly")
         self.monitor_combo.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
 
-        ttk.Label(device_frame, text="Clip seconds").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(device_frame, textvariable=self.clip_seconds).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Clip seconds").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(live_frame, textvariable=self.clip_seconds).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
 
-        ttk.Label(device_frame, text="FPS").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(device_frame, textvariable=self.fps).grid(row=3, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="FPS").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(live_frame, textvariable=self.fps).grid(row=3, column=2, sticky="ew", padx=8, pady=(0, 8))
 
-        ttk.Button(device_frame, text="Use OBS Projector Mode", command=self.use_obs_projector_mode).grid(
+        ttk.Button(live_frame, text="Use OBS Projector Mode", command=self.use_obs_projector_mode).grid(
             row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(device_frame, text="FFmpeg path").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(device_frame, textvariable=self.ffmpeg_path).grid(row=5, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Voice commands").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
+            row=5, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(live_frame, text="Clip action").grid(row=4, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(live_frame, textvariable=self.clip_action, values=("obs_replay_buffer", "local_buffer"), state="readonly").grid(
+            row=5, column=1, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(live_frame, text="Start Live Clipper", command=self.start_live_clipper).grid(
+            row=5, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(live_frame, text="Clip Now", command=self.clip_now).grid(row=5, column=3, sticky="ew", padx=8, pady=(0, 8))
 
-        audio_frame = ttk.LabelFrame(outer, text="Listening And Context Audio")
-        audio_frame.grid(row=2, column=0, sticky="ew", pady=8)
-        audio_frame.columnconfigure(0, weight=1)
-        audio_frame.columnconfigure(1, weight=0)
-        ttk.Label(audio_frame, text="Select one or more input devices to monitor").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
-        self.audio_list = tk.Listbox(audio_frame, height=7, selectmode=tk.MULTIPLE, exportselection=False)
-        self.audio_list.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        audio_buttons = ttk.Frame(audio_frame)
-        audio_buttons.grid(row=1, column=1, sticky="ns", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Select one or more input devices to monitor").grid(
+            row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
+        )
+        self.audio_list = tk.Listbox(live_frame, height=5, selectmode=tk.MULTIPLE, exportselection=False)
+        self.audio_list.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
+        audio_buttons = ttk.Frame(live_frame)
+        audio_buttons.grid(row=7, column=3, sticky="nsew", padx=8, pady=(0, 8))
         ttk.Button(audio_buttons, text="Refresh Audio", command=self.refresh_audio_devices).pack(fill=tk.X, pady=(0, 6))
         ttk.Button(audio_buttons, text="Use Line In + USB", command=self.use_default_audio_pair).pack(fill=tk.X)
 
-        obs_frame = ttk.LabelFrame(outer, text="OBS Clip Renamer")
-        obs_frame.grid(row=3, column=0, sticky="ew", pady=8)
+        rename_frame = ttk.LabelFrame(outer, text="Renaming")
+        rename_frame.grid(row=2, column=0, sticky="ew", pady=8)
         for column in range(5):
-            obs_frame.columnconfigure(column, weight=1)
-        ttk.Label(obs_frame, text="OBS recording or replay-buffer folder").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
-        ttk.Entry(obs_frame, textvariable=self.obs_output_dir).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Button(obs_frame, text="Browse", command=self.browse_obs_folder).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Button(obs_frame, text="Rename One Clip", command=self.rename_one_clip).grid(row=1, column=2, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Button(obs_frame, text="Batch Rename Existing", command=self.batch_rename_existing_clips).grid(
+            rename_frame.columnconfigure(column, weight=1)
+        ttk.Label(rename_frame, text="OBS recording or replay-buffer folder").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        ttk.Entry(rename_frame, textvariable=self.obs_output_dir).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(rename_frame, text="Browse", command=self.browse_obs_folder).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(rename_frame, text="Rename One Clip", command=self.rename_one_clip).grid(row=1, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(rename_frame, text="Batch Rename Existing", command=self.batch_rename_existing_clips).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Button(obs_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(row=1, column=4, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(obs_frame, text="OBS host").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(obs_frame, textvariable=self.obs_host).grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(obs_frame, text="OBS port").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(obs_frame, textvariable=self.obs_port).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(obs_frame, text="OBS password").grid(row=2, column=2, columnspan=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(obs_frame, textvariable=self.obs_password, show="*").grid(
-            row=3, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        ttk.Button(rename_frame, text="Start OBS Renamer", command=self.start_obs_renamer).grid(
+            row=1, column=4, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ai_frame = ttk.LabelFrame(outer, text="AI Naming")
-        ai_frame.grid(row=4, column=0, sticky="ew", pady=8)
+        rest_frame = ttk.LabelFrame(outer, text="Settings And Logs")
+        rest_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        rest_frame.columnconfigure(0, weight=1)
+        rest_frame.rowconfigure(2, weight=1)
+
+        settings_frame = ttk.Frame(rest_frame)
+        settings_frame.grid(row=0, column=0, sticky="ew")
+        for column in range(4):
+            settings_frame.columnconfigure(column, weight=1)
+
+        ttk.Label(settings_frame, text="FFmpeg path").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        ttk.Entry(settings_frame, textvariable=self.ffmpeg_path).grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(settings_frame, text="Vosk model folder").grid(row=0, column=2, sticky="w", padx=8, pady=(8, 2))
+        ttk.Entry(settings_frame, textvariable=self.vosk_model_path).grid(
+            row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(settings_frame, text="Browse Vosk Model", command=self.browse_vosk_model).grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        ttk.Label(settings_frame, text="OBS host").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_host).grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(settings_frame, text="OBS port").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_port).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(settings_frame, text="OBS password").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_password, show="*").grid(row=3, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(settings_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(
+            row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        ai_frame = ttk.Frame(rest_frame)
+        ai_frame.grid(row=1, column=0, sticky="ew")
         for column in range(4):
             ai_frame.columnconfigure(column, weight=1)
         ttk.Label(ai_frame, text="Provider").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
@@ -449,60 +483,37 @@ class ControlPanel(tk.Tk):
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(ai_frame, text="Voice commands").grid(row=3, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(ai_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
-            row=4, column=0, sticky="ew", padx=8, pady=(0, 8)
-        )
-        ttk.Label(ai_frame, text="Clip action").grid(row=3, column=1, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(ai_frame, textvariable=self.clip_action, values=("obs_replay_buffer", "local_buffer"), state="readonly").grid(
-            row=4, column=1, sticky="ew", padx=8, pady=(0, 8)
-        )
-        ttk.Label(ai_frame, text="Vosk model folder").grid(row=3, column=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(ai_frame, textvariable=self.vosk_model_path).grid(
-            row=4, column=2, sticky="ew", padx=8, pady=(0, 8)
-        )
-        ttk.Button(ai_frame, text="Browse Vosk Model", command=self.browse_vosk_model).grid(
-            row=4, column=3, sticky="ew", padx=8, pady=(0, 8)
-        )
         ttk.Checkbutton(
             ai_frame,
             text="Enable OBS scene/source voice switching",
             variable=self.enable_obs_scene_source_switching,
-        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=8, pady=(0, 8))
-        ttk.Label(ai_frame, text="Filename prefix").grid(row=6, column=0, sticky="w", padx=8, pady=(4, 2))
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 8))
+        ttk.Label(ai_frame, text="Filename prefix").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_prefix).grid(
-            row=7, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=5, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Filename suffix").grid(row=6, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(ai_frame, text="Filename suffix").grid(row=4, column=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_suffix).grid(
-            row=7, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=5, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        action_frame = ttk.Frame(outer)
-        action_frame.grid(row=5, column=0, sticky="nsew", pady=(8, 0))
+        action_frame = ttk.Frame(rest_frame)
+        action_frame.grid(row=2, column=0, sticky="nsew")
         action_frame.columnconfigure(0, weight=1)
         action_frame.rowconfigure(1, weight=1)
 
         buttons = ttk.Frame(action_frame)
         buttons.grid(row=0, column=0, sticky="ew")
-        for column in range(7):
+        for column in range(4):
             buttons.columnconfigure(column, weight=1)
         ttk.Button(buttons, text="Save Config", command=self.save_from_ui).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(buttons, text="Start Live Clipper", command=self.start_live_clipper).grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Clip Now", command=self.clip_now).grid(row=0, column=2, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Save OBS Replay", command=self.save_obs_replay).grid(row=0, column=3, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Start OBS Renamer", command=self.start_obs_renamer).grid(row=0, column=4, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Stop", command=self.stop_process).grid(row=0, column=5, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Open Clips Folder", command=self.open_clips_folder).grid(row=0, column=6, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Stop", command=self.stop_process).grid(row=0, column=1, sticky="ew", padx=6)
+        ttk.Button(buttons, text="Open Clips Folder", command=self.open_clips_folder).grid(row=0, column=2, sticky="ew", padx=6)
+        ttk.Button(buttons, text="Contact Me", command=self.open_contact_link).grid(row=0, column=3, sticky="ew", padx=(6, 0))
 
         self.log = tk.Text(action_frame, height=12, wrap=tk.WORD)
         self.log.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         self.log.configure(state=tk.DISABLED)
-
-        footer = ttk.Frame(action_frame)
-        footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        footer.columnconfigure(0, weight=1)
-        ttk.Button(footer, text="Contact Me", command=self.open_contact_link).grid(row=0, column=1, sticky="e")
         self.style_native_widgets()
 
     def update_ai_provider_fields(self) -> None:

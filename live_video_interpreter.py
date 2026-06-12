@@ -65,6 +65,44 @@ class VoiceAction:
     target: str | None = None
 
 
+def extract_obs_switch_target(normalized: str) -> str | None:
+    for pattern in OBS_SWITCH_PATTERNS:
+        match = pattern.search(normalized)
+        if not match:
+            continue
+        target = re.sub(r"\b(?:please|the|scene|source)\b", " ", match.group("target"))
+        target = re.sub(r"\s+", " ", target).strip(" .,!?:;")
+        if target:
+            return target
+    return None
+
+
+def voice_command_action(
+    text: str,
+    voice_commands: tuple[str, ...],
+    enable_obs_scene_source_switching: bool = False,
+) -> VoiceAction | None:
+    normalized = text.lower().strip()
+    if any(command in normalized for command in START_REPLAY_BUFFER_COMMANDS):
+        return VoiceAction("start_replay_buffer")
+    if any(command in normalized for command in STOP_REPLAY_BUFFER_COMMANDS):
+        return VoiceAction("stop_replay_buffer")
+    if any(command in normalized for command in START_RECORDING_COMMANDS):
+        return VoiceAction("start_recording")
+    if any(command in normalized for command in STOP_RECORDING_COMMANDS):
+        return VoiceAction("stop_recording")
+    if enable_obs_scene_source_switching:
+        target = extract_obs_switch_target(normalized)
+        if target:
+            return VoiceAction("switch_obs_scene_or_source", target)
+    if any(command in normalized for command in voice_commands):
+        return VoiceAction("clip")
+    words = set(re.findall(r"[a-z]+", normalized))
+    if words.intersection({"clip", "save", "capture"}) or {"record", "that"}.issubset(words):
+        return VoiceAction("clip")
+    return None
+
+
 @dataclass
 class OpenAIConfig:
     api_key: str | None = None
@@ -481,36 +519,14 @@ class RollingClipper:
         return self._voice_command_action(text) is not None
 
     def _voice_command_action(self, text: str) -> VoiceAction | None:
-        normalized = text.lower().strip()
-        if any(command in normalized for command in START_REPLAY_BUFFER_COMMANDS):
-            return VoiceAction("start_replay_buffer")
-        if any(command in normalized for command in STOP_REPLAY_BUFFER_COMMANDS):
-            return VoiceAction("stop_replay_buffer")
-        if any(command in normalized for command in START_RECORDING_COMMANDS):
-            return VoiceAction("start_recording")
-        if any(command in normalized for command in STOP_RECORDING_COMMANDS):
-            return VoiceAction("stop_recording")
-        if self.config.voice.enable_obs_scene_source_switching:
-            target = self._extract_obs_switch_target(normalized)
-            if target:
-                return VoiceAction("switch_obs_scene_or_source", target)
-        if any(command in normalized for command in self.config.voice_commands):
-            return VoiceAction("clip")
-        words = set(re.findall(r"[a-z]+", normalized))
-        if words.intersection({"clip", "save", "capture"}) or {"record", "that"}.issubset(words):
-            return VoiceAction("clip")
-        return None
+        return voice_command_action(
+            text,
+            self.config.voice_commands,
+            self.config.voice.enable_obs_scene_source_switching,
+        )
 
     def _extract_obs_switch_target(self, normalized: str) -> str | None:
-        for pattern in OBS_SWITCH_PATTERNS:
-            match = pattern.search(normalized)
-            if not match:
-                continue
-            target = re.sub(r"\b(?:please|the|scene|source)\b", " ", match.group("target"))
-            target = re.sub(r"\s+", " ", target).strip(" .,!?:;")
-            if target:
-                return target
-        return None
+        return extract_obs_switch_target(normalized)
 
     def _trigger_loop(self) -> None:
         while not self.stop_event.is_set():
@@ -1376,9 +1392,29 @@ def main() -> None:
     parser.add_argument("--stop-obs-recording", action="store_true", help="Tell OBS to stop recording.")
     parser.add_argument("--list-obs-scenes-sources", action="store_true", help="List OBS scenes and scene-item sources.")
     parser.add_argument("--switch-obs-to", help="Switch OBS to a scene or source by name.")
+    parser.add_argument(
+        "--voice-command-smoke-test",
+        metavar="TEXT",
+        help="Match a voice-command phrase and exit without using the microphone, OBS, or capture devices.",
+    )
     args = parser.parse_args()
     config_path = Path(args.config)
     config = load_config(config_path)
+
+    if args.voice_command_smoke_test is not None:
+        action = voice_command_action(
+            args.voice_command_smoke_test,
+            config.voice_commands,
+            config.voice.enable_obs_scene_source_switching,
+        )
+        if action is None:
+            print(f"No voice command matched: {args.voice_command_smoke_test}")
+            raise SystemExit(1)
+        if action.target:
+            print(f"Voice command matched: {action.kind} -> {action.target}")
+        else:
+            print(f"Voice command matched: {action.kind}")
+        return
 
     if args.list_audio_devices:
         print(sd.query_devices())

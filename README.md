@@ -193,6 +193,14 @@ models\vosk-model-small-en-us-0.15
 
 Use `setup.ps1 -SkipVoskModel` if you plan to provide your own model path in `config.json`.
 
+Test command matching without using the microphone, OBS, or capture devices:
+
+```powershell
+.\.venv\Scripts\python.exe -u .\live_video_interpreter.py --voice-command-smoke-test "clip that"
+```
+
+Matched phrases print the action that would run and exit with code `0`. Non-command text prints `No voice command matched` and exits with code `1`.
+
 ## LM Studio Setup
 
 LM Studio is optional and is used for local AI clip naming. The voice transcription is still handled by Vosk.
