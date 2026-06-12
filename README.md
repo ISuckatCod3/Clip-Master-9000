@@ -320,8 +320,21 @@ Then use explicit commands:
 .\.venv\Scripts\python.exe .\live_video_interpreter.py --list-obs-scenes-sources
 .\.venv\Scripts\python.exe .\live_video_interpreter.py --switch-obs-to "Gameplay"
 ```
+## How to install for dummies
+1. Clone the repo
+2. Navigate to the project folder
+3. Open Powershell with Admin
+4. CD .\Clip-Master-9000
+5. Run .\package.ps1 -Target exe
+6. Open Explorer
+7. Navigate to .\Clip-Master-9000\Dist\Clip Master 9000
+8. Double-click Clip Master 9000.exe
 
-## First Run Checklist
+UI will launch.
+
+Set parameters and hit "Save Config"
+
+## First Run Checklist *not needed if using .exe*
 
 1. Run `setup.bat`.
 2. Start OBS.
