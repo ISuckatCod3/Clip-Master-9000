@@ -37,6 +37,11 @@ except ImportError:
     KaldiRecognizer = None
     Model = None
 
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    WhisperModel = None
+
 
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
@@ -141,9 +146,18 @@ class LMStudioConfig:
 
 
 @dataclass
+class LocalWhisperConfig:
+    model_size: str = "base.en"
+    device: str = "auto"
+    compute_type: str = "int8"
+    cpu_threads: int = 0
+
+
+@dataclass
 class VoiceConfig:
     provider: str = "vosk"
     vosk_model_path: Path = Path("models/vosk-model-en-us-0.22-lgraph")
+    rename_vosk_model_path: Path = Path("models/vosk-model-en-us-0.22-lgraph")
     trigger_cooldown_seconds: float = 2.0
     clip_action: str = "obs_replay_buffer"
     enable_obs_scene_source_switching: bool = False
@@ -190,12 +204,13 @@ class AppConfig:
     ffmpeg_path: str = "ffmpeg"
     ai_provider: str = "openai"
     voice_command_provider: str = "vosk"
-    rename_transcription_provider: str = "openai"
+    rename_transcription_provider: str = "local_whisper"
     name_live_clips: bool = False
     filename_prefix: str = ""
     filename_suffix: str = ""
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     lmstudio: LMStudioConfig = field(default_factory=LMStudioConfig)
+    local_whisper: LocalWhisperConfig = field(default_factory=LocalWhisperConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     obs: OBSConfig = field(default_factory=OBSConfig)
 
@@ -226,6 +241,8 @@ class RollingClipper:
         self.voice_transcription_unavailable = False
         self.openai_client = self._build_openai_client()
         self.lmstudio_client = self._build_lmstudio_client()
+        self.vosk_model_cache: Model | None = None
+        self.local_whisper_model_cache: Any | None = None
         self.ffmpeg_path = self._resolve_ffmpeg(config.ffmpeg_path)
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
         self.config.buffer_dir.mkdir(parents=True, exist_ok=True)
@@ -1048,6 +1065,10 @@ class RollingClipper:
         if provider in {"", "disabled", "none", "off"}:
             print("Rename audio transcription is disabled; naming from frames only.", flush=True)
             return ""
+        if provider in {"local_whisper", "whisper", "faster_whisper"}:
+            return self._transcribe_file_local_whisper(audio_path)
+        if provider == "vosk":
+            return self._transcribe_file_vosk(audio_path)
         if provider != "openai":
             print(f"Unknown rename transcription provider: {self.config.rename_transcription_provider}", flush=True)
             return ""
@@ -1081,6 +1102,115 @@ class RollingClipper:
             return getattr(result, "text", "") or ""
         except Exception as exc:
             print(f"{label} transcription failed: {exc}")
+            return ""
+
+    def _load_vosk_model(self) -> Any | None:
+        if Model is None or KaldiRecognizer is None:
+            print("Vosk is not installed. Run pip install -r requirements.txt.", flush=True)
+            return None
+        if self.vosk_model_cache is not None:
+            return self.vosk_model_cache
+        model_path = self.config.voice.rename_vosk_model_path
+        if not model_path.exists():
+            print(f"Vosk model not found: {model_path}", flush=True)
+            return None
+        try:
+            print(f"Loading Vosk rename transcription model: {model_path}", flush=True)
+            self.vosk_model_cache = Model(str(model_path))
+            return self.vosk_model_cache
+        except Exception as exc:
+            print(f"Could not load Vosk model at {model_path}: {exc}", flush=True)
+            return None
+
+    def _transcribe_file_vosk(self, audio_path: Path) -> str:
+        model = self._load_vosk_model()
+        if model is None or not audio_path.exists() or audio_path.stat().st_size == 0:
+            return ""
+        try:
+            with wave.open(str(audio_path), "rb") as wav_file:
+                sample_rate = wav_file.getframerate()
+                channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                if sample_width != 2:
+                    print(
+                        f"Vosk rename transcription expected 16-bit PCM WAV, got {sample_width * 8}-bit audio.",
+                        flush=True,
+                    )
+                    return ""
+                recognizer = KaldiRecognizer(model, sample_rate)
+                while True:
+                    data = wav_file.readframes(4000)
+                    if not data:
+                        break
+                    if channels > 1:
+                        audio = np.frombuffer(data, dtype=np.int16).reshape(-1, channels)
+                        data = audio.mean(axis=1).astype(np.int16).tobytes()
+                    recognizer.AcceptWaveform(data)
+                result = json.loads(recognizer.FinalResult())
+                transcript = str(result.get("text", "")).strip()
+                if transcript:
+                    print(f"Vosk rename transcript: {transcript}", flush=True)
+                else:
+                    print("Vosk rename transcription returned no text.", flush=True)
+                return transcript
+        except Exception as exc:
+            print(f"Vosk rename transcription failed: {exc}", flush=True)
+            return ""
+
+    def _load_local_whisper_model(self) -> Any | None:
+        if WhisperModel is None:
+            print(
+                "Local Whisper rename transcription requires faster-whisper. "
+                "Run pip install -r requirements.txt.",
+                flush=True,
+            )
+            return None
+        if self.local_whisper_model_cache is not None:
+            return self.local_whisper_model_cache
+        config = self.config.local_whisper
+        model_size_or_path = str(config.model_size or "base.en")
+        kwargs: dict[str, Any] = {
+            "device": config.device or "auto",
+            "compute_type": config.compute_type or "int8",
+        }
+        if config.cpu_threads > 0:
+            kwargs["cpu_threads"] = config.cpu_threads
+        try:
+            print(
+                "Loading local Whisper rename transcription model: "
+                f"{model_size_or_path} ({kwargs['device']}, {kwargs['compute_type']})",
+                flush=True,
+            )
+            self.local_whisper_model_cache = WhisperModel(model_size_or_path, **kwargs)
+            return self.local_whisper_model_cache
+        except Exception as exc:
+            print(f"Could not load local Whisper model {model_size_or_path}: {exc}", flush=True)
+            return None
+
+    def _transcribe_file_local_whisper(self, audio_path: Path) -> str:
+        model = self._load_local_whisper_model()
+        if model is None or not audio_path.exists() or audio_path.stat().st_size == 0:
+            return ""
+        try:
+            segments, info = model.transcribe(
+                str(audio_path),
+                beam_size=1,
+                vad_filter=True,
+                word_timestamps=False,
+            )
+            transcript = " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
+            if transcript:
+                language = getattr(info, "language", "unknown")
+                probability = getattr(info, "language_probability", 0.0)
+                print(
+                    f"Local Whisper rename transcript ({language}, {probability:.2f}): {transcript}",
+                    flush=True,
+                )
+            else:
+                print("Local Whisper rename transcription returned no text.", flush=True)
+            return transcript
+        except Exception as exc:
+            print(f"Local Whisper rename transcription failed: {exc}", flush=True)
             return ""
 
     def _transcribe_audio_array(
@@ -1364,6 +1494,7 @@ def load_config(path: Path) -> AppConfig:
     raw = json.loads(path.read_text(encoding="utf-8"))
     openai_raw = raw.get("openai", {})
     lmstudio_raw = raw.get("lmstudio", {})
+    local_whisper_raw = raw.get("local_whisper", {})
     voice_raw = raw.get("voice", {})
     obs_raw = raw.get("obs", {})
     voice_command_provider = str(raw.get("voice_command_provider", AppConfig.voice_command_provider)).lower()
@@ -1427,10 +1558,19 @@ def load_config(path: Path) -> AppConfig:
             api_key_env=str(lmstudio_raw.get("api_key_env", LMStudioConfig.api_key_env)),
             vision_model=str(lmstudio_raw.get("vision_model", LMStudioConfig.vision_model)),
         ),
+        local_whisper=LocalWhisperConfig(
+            model_size=str(local_whisper_raw.get("model_size", LocalWhisperConfig.model_size)),
+            device=str(local_whisper_raw.get("device", LocalWhisperConfig.device)),
+            compute_type=str(local_whisper_raw.get("compute_type", LocalWhisperConfig.compute_type)),
+            cpu_threads=int(local_whisper_raw.get("cpu_threads", LocalWhisperConfig.cpu_threads)),
+        ),
         voice=VoiceConfig(
             provider=str(voice_raw.get("provider", VoiceConfig.provider)),
             vosk_model_path=resolve_vosk_model_path(
                 bundled_path(Path(voice_raw.get("vosk_model_path", VoiceConfig.vosk_model_path)))
+            ),
+            rename_vosk_model_path=resolve_vosk_model_path(
+                bundled_path(Path(voice_raw.get("rename_vosk_model_path", VoiceConfig.rename_vosk_model_path)))
             ),
             trigger_cooldown_seconds=float(
                 voice_raw.get("trigger_cooldown_seconds", VoiceConfig.trigger_cooldown_seconds)

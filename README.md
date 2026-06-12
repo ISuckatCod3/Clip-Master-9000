@@ -193,17 +193,24 @@ Voice settings:
 
 ```json
 "voice_command_provider": "vosk",
-"rename_transcription_provider": "openai",
+"rename_transcription_provider": "local_whisper",
+"local_whisper": {
+  "model_size": "base.en",
+  "device": "auto",
+  "compute_type": "int8",
+  "cpu_threads": 0
+},
 "voice": {
   "provider": "vosk",
   "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
+  "rename_vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
   "trigger_cooldown_seconds": 2,
   "clip_action": "obs_replay_buffer",
   "enable_obs_scene_source_switching": false
 }
 ```
 
-Vosk is the default voice command engine. A normal `setup.bat` run installs the `vosk` Python package and downloads the default model into:
+Vosk is the default live voice command engine. A normal `setup.bat` run installs the Python dependencies, including `vosk` and `faster-whisper`, and downloads the default Vosk model into:
 
 ```text
 models\vosk-model-en-us-0.22-lgraph
@@ -222,13 +229,15 @@ Matched phrases print the action that would run and exit with code `0`. Non-comm
 Live voice commands and clip renaming transcription are separate settings:
 
 - `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening or `openai` for API transcription.
-- `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `openai` for transcript-aware names or `disabled` to name from frames only.
+- `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `local_whisper` for faster local transcript-aware names, `vosk` for the large Vosk model, `openai` for API transcription, or `disabled` to name from frames only.
+- `local_whisper.model_size` can be a faster-whisper model name such as `base.en`, `small.en`, or a local model path. The first use may download the model.
+- `voice.rename_vosk_model_path` should point at the large Vosk model if `rename_transcription_provider` is set to `vosk`. This is separate from `voice.vosk_model_path`, so live commands can use a faster model later without downgrading Vosk rename transcripts.
 - `openai.voice_command_transcription_model` is used only for OpenAI-powered live commands.
 - `openai.rename_transcription_model` is used only for transcript context during one-off, batch, live-watch, and optional immediate live-clip naming.
 
 ## LM Studio Setup
 
-LM Studio is optional and can be used for local AI clip naming through its OpenAI-compatible server. It is not used for live voice commands or audio transcription in this app. Live voice commands use Vosk by default, or OpenAI transcription if selected; rename-time audio transcription uses OpenAI when `rename_transcription_provider` is set to `openai`.
+LM Studio is optional and can be used for local AI clip naming through its OpenAI-compatible server. It is not used for live voice commands or audio transcription in this app. Live voice commands use Vosk by default, or OpenAI transcription if selected; rename-time audio transcription uses local Whisper by default, Vosk when `rename_transcription_provider` is set to `vosk`, or OpenAI when it is set to `openai`.
 
 1. Install LM Studio.
 2. Download a vision-capable model for clip naming.

@@ -81,7 +81,7 @@ DEFAULT_CONFIG = {
     "ffmpeg_path": "ffmpeg",
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
-    "rename_transcription_provider": "openai",
+    "rename_transcription_provider": "local_whisper",
     "name_live_clips": False,
     "filename_prefix": "",
     "filename_suffix": "",
@@ -98,9 +98,16 @@ DEFAULT_CONFIG = {
         "api_key_env": "LMSTUDIO_API_KEY",
         "vision_model": "qwen3-vl-2b",
     },
+    "local_whisper": {
+        "model_size": "base.en",
+        "device": "auto",
+        "compute_type": "int8",
+        "cpu_threads": 0,
+    },
     "voice": {
         "provider": "vosk",
         "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
+        "rename_vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
         "trigger_cooldown_seconds": 2,
         "clip_action": "obs_replay_buffer",
         "enable_obs_scene_source_switching": False,
@@ -138,7 +145,9 @@ class ControlPanel(tk.Tk):
         self.clip_seconds = tk.StringVar(value=str(self.config.get("clip_seconds", 45)))
         self.fps = tk.StringVar(value=str(self.config.get("fps", 12)))
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
-        self.rename_transcription_provider = tk.StringVar(value=self.config.get("rename_transcription_provider", "openai"))
+        self.rename_transcription_provider = tk.StringVar(
+            value=self.config.get("rename_transcription_provider", "local_whisper")
+        )
         self.name_live_clips = tk.BooleanVar(value=bool(self.config.get("name_live_clips", False)))
         self.filename_prefix = tk.StringVar(value=self.config.get("filename_prefix", ""))
         self.filename_suffix = tk.StringVar(value=self.config.get("filename_suffix", ""))
@@ -159,9 +168,17 @@ class ControlPanel(tk.Tk):
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
         self.lmstudio_model = tk.StringVar(value=lmstudio.get("vision_model", "qwen2.5-vl-7b-instruct"))
         self.lmstudio_key_env = tk.StringVar(value=lmstudio.get("api_key_env", "LMSTUDIO_API_KEY"))
+        local_whisper = self.config.get("local_whisper", {})
+        self.local_whisper_model = tk.StringVar(value=local_whisper.get("model_size", "base.en"))
+        self.local_whisper_device = tk.StringVar(value=local_whisper.get("device", "auto"))
+        self.local_whisper_compute_type = tk.StringVar(value=local_whisper.get("compute_type", "int8"))
+        self.local_whisper_cpu_threads = tk.StringVar(value=str(local_whisper.get("cpu_threads", 0)))
         voice = self.config.get("voice", {})
         self.voice_provider = tk.StringVar(value=self.config.get("voice_command_provider", voice.get("provider", "vosk")))
         self.vosk_model_path = tk.StringVar(value=voice.get("vosk_model_path", "models/vosk-model-en-us-0.22-lgraph"))
+        self.rename_vosk_model_path = tk.StringVar(
+            value=voice.get("rename_vosk_model_path", "models/vosk-model-en-us-0.22-lgraph")
+        )
         self.clip_action = tk.StringVar(value=voice.get("clip_action", "obs_replay_buffer"))
         self.enable_obs_scene_source_switching = tk.BooleanVar(
             value=bool(voice.get("enable_obs_scene_source_switching", False))
@@ -463,45 +480,81 @@ class ControlPanel(tk.Tk):
         ttk.Entry(settings_frame, textvariable=self.ffmpeg_path).grid(
             row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(settings_frame, text="Vosk model folder").grid(row=0, column=2, sticky="w", padx=8, pady=(8, 2))
+        ttk.Label(settings_frame, text="Live Vosk model folder").grid(row=0, column=2, sticky="w", padx=8, pady=(8, 2))
         ttk.Entry(settings_frame, textvariable=self.vosk_model_path).grid(
             row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Button(settings_frame, text="Browse Vosk Model", command=self.browse_vosk_model).grid(
+        ttk.Button(settings_frame, text="Browse Live Vosk", command=self.browse_vosk_model).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(settings_frame, text="OBS host").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(settings_frame, textvariable=self.obs_host).grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(settings_frame, text="OBS port").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(settings_frame, textvariable=self.obs_port).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Label(settings_frame, text="OBS password").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(settings_frame, textvariable=self.obs_password, show="*").grid(row=3, column=2, sticky="ew", padx=8, pady=(0, 8))
-        ttk.Button(settings_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(
+        ttk.Label(settings_frame, text="Rename Vosk model folder").grid(row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.rename_vosk_model_path).grid(
+            row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(settings_frame, text="Browse Rename Vosk", command=self.browse_rename_vosk_model).grid(
             row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        ttk.Label(settings_frame, text="OBS host").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_host).grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(settings_frame, text="OBS port").grid(row=4, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_port).grid(row=5, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(settings_frame, text="OBS password").grid(row=4, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(settings_frame, textvariable=self.obs_password, show="*").grid(row=5, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(settings_frame, text="Save OBS Replay", command=self.save_obs_replay).grid(
+            row=5, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
         ai_frame = ttk.Frame(rest_frame)
         ai_frame.grid(row=1, column=0, sticky="ew")
         for column in range(4):
             ai_frame.columnconfigure(column, weight=1)
-        ttk.Label(ai_frame, text="Rename AI provider").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        ttk.Label(ai_frame, text="Rename AI provider").grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 2))
         ttk.Combobox(ai_frame, textvariable=self.ai_provider, values=("lmstudio", "openai"), state="readonly").grid(
-            row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
+            row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Rename transcription").grid(row=0, column=1, sticky="w", padx=8, pady=(8, 2))
+        ttk.Label(ai_frame, text="Rename transcription").grid(row=0, column=2, columnspan=2, sticky="w", padx=8, pady=(8, 2))
         ttk.Combobox(
             ai_frame,
             textvariable=self.rename_transcription_provider,
-            values=("openai", "disabled"),
+            values=("local_whisper", "vosk", "openai", "disabled"),
+            state="readonly",
+        ).grid(row=1, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        self.local_whisper_fields = ttk.Frame(ai_frame)
+        self.local_whisper_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
+        for column in range(4):
+            self.local_whisper_fields.columnconfigure(column, weight=1)
+        ttk.Label(self.local_whisper_fields, text="Whisper model").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.local_whisper_fields, textvariable=self.local_whisper_model).grid(
+            row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.local_whisper_fields, text="Whisper device").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(
+            self.local_whisper_fields,
+            textvariable=self.local_whisper_device,
+            values=("auto", "cuda", "cpu"),
             state="readonly",
         ).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(self.local_whisper_fields, text="Compute type").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(
+            self.local_whisper_fields,
+            textvariable=self.local_whisper_compute_type,
+            values=("int8", "float16", "int8_float16", "float32"),
+            state="readonly",
+        ).grid(row=1, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(self.local_whisper_fields, text="CPU threads").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.local_whisper_fields, textvariable=self.local_whisper_cpu_threads).grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
         self.openai_fields = ttk.Frame(ai_frame)
-        self.openai_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
+        self.openai_fields.grid(row=3, column=0, columnspan=4, sticky="ew")
         for column in range(4):
             self.openai_fields.columnconfigure(column, weight=1)
         ttk.Label(self.openai_fields, text="API key env var").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.openai_fields, textvariable=self.openai_key_env).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_key_env).grid(
+            row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
         ttk.Label(self.openai_fields, text="API key").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(self.openai_fields, textvariable=self.openai_api_key, show="*").grid(
             row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
@@ -510,25 +563,25 @@ class ControlPanel(tk.Tk):
         ttk.Entry(self.openai_fields, textvariable=self.openai_naming_model).grid(
             row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.openai_fields, text="Live command transcription model").grid(
-            row=0, column=3, sticky="w", padx=8, pady=(4, 2)
-        )
-        ttk.Entry(self.openai_fields, textvariable=self.openai_voice_command_transcription_model).grid(
+        ttk.Label(self.openai_fields, text="Max frames").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.openai_fields, textvariable=self.openai_max_frames).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.openai_fields, text="Max naming frames").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.openai_fields, textvariable=self.openai_max_frames).grid(
-            row=3, column=0, sticky="ew", padx=8, pady=(0, 8)
+        ttk.Label(self.openai_fields, text="Live command model").grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 2)
         )
-        ttk.Label(self.openai_fields, text="Rename audio transcription model").grid(
-            row=2, column=1, sticky="w", padx=8, pady=(4, 2)
+        ttk.Entry(self.openai_fields, textvariable=self.openai_voice_command_transcription_model).grid(
+            row=3, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.openai_fields, text="Rename transcript model").grid(
+            row=2, column=2, columnspan=2, sticky="w", padx=8, pady=(4, 2)
         )
         ttk.Entry(self.openai_fields, textvariable=self.openai_rename_transcription_model).grid(
-            row=3, column=1, sticky="ew", padx=8, pady=(0, 8)
+            row=3, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
 
         self.lmstudio_fields = ttk.Frame(ai_frame)
-        self.lmstudio_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
+        self.lmstudio_fields.grid(row=4, column=0, columnspan=4, sticky="ew")
         for column in range(4):
             self.lmstudio_fields.columnconfigure(column, weight=1)
         ttk.Label(self.lmstudio_fields, text="LM Studio base URL").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
@@ -552,14 +605,14 @@ class ControlPanel(tk.Tk):
             ai_frame,
             text="Enable OBS scene/source voice switching",
             variable=self.enable_obs_scene_source_switching,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 8))
-        ttk.Label(ai_frame, text="Filename prefix").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 8))
+        ttk.Label(ai_frame, text="Filename prefix").grid(row=6, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_prefix).grid(
-            row=5, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=7, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Filename suffix").grid(row=4, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(ai_frame, text="Filename suffix").grid(row=6, column=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_suffix).grid(
-            row=5, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=7, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
 
         action_frame = ttk.Frame(rest_frame)
@@ -597,6 +650,11 @@ class ControlPanel(tk.Tk):
         else:
             self.lmstudio_fields.grid_remove()
 
+        if rename_transcription_provider in {"local_whisper", "whisper", "faster_whisper"}:
+            self.local_whisper_fields.grid()
+        else:
+            self.local_whisper_fields.grid_remove()
+
     def load_config(self) -> dict:
         if CONFIG_PATH.exists():
             with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
@@ -611,6 +669,10 @@ class ControlPanel(tk.Tk):
                 lmstudio = DEFAULT_CONFIG["lmstudio"].copy()
                 lmstudio.update(loaded["lmstudio"])
                 merged["lmstudio"] = lmstudio
+            if "local_whisper" in loaded:
+                local_whisper = DEFAULT_CONFIG["local_whisper"].copy()
+                local_whisper.update(loaded["local_whisper"])
+                merged["local_whisper"] = local_whisper
             if "voice" in loaded:
                 voice = DEFAULT_CONFIG["voice"].copy()
                 voice.update(loaded["voice"])
@@ -660,10 +722,17 @@ class ControlPanel(tk.Tk):
                 "api_key_env": self.lmstudio_key_env.get() or "LMSTUDIO_API_KEY",
                 "vision_model": self.lmstudio_model.get() or "qwen2.5-vl-7b-instruct",
             }
+            self.config["local_whisper"] = {
+                "model_size": self.local_whisper_model.get() or "base.en",
+                "device": self.local_whisper_device.get() or "auto",
+                "compute_type": self.local_whisper_compute_type.get() or "int8",
+                "cpu_threads": int(self.local_whisper_cpu_threads.get() or "0"),
+            }
             self.config["voice_command_provider"] = self.voice_provider.get()
             self.config["voice"] = {
                 "provider": self.voice_provider.get(),
                 "vosk_model_path": self.vosk_model_path.get() or "models/vosk-model-en-us-0.22-lgraph",
+                "rename_vosk_model_path": self.rename_vosk_model_path.get() or "models/vosk-model-en-us-0.22-lgraph",
                 "trigger_cooldown_seconds": 2,
                 "clip_action": self.clip_action.get(),
                 "enable_obs_scene_source_switching": self.enable_obs_scene_source_switching.get(),
@@ -793,6 +862,14 @@ class ControlPanel(tk.Tk):
                 self.vosk_model_path.set(str(Path(folder).resolve().relative_to(APP_DIR)))
             except ValueError:
                 self.vosk_model_path.set(folder)
+
+    def browse_rename_vosk_model(self) -> None:
+        folder = filedialog.askdirectory(initialdir=str(APP_DIR / "models"))
+        if folder:
+            try:
+                self.rename_vosk_model_path.set(str(Path(folder).resolve().relative_to(APP_DIR)))
+            except ValueError:
+                self.rename_vosk_model_path.set(folder)
 
     def rename_one_clip(self) -> None:
         path = filedialog.askopenfilename(

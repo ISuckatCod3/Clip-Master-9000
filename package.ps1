@@ -106,6 +106,11 @@ $PyInstallerArgs = @(
     "--onedir",
     "--name", $ExeName,
     "--collect-all", "vosk",
+    "--collect-all", "faster_whisper",
+    "--collect-all", "ctranslate2",
+    "--collect-all", "tokenizers",
+    "--collect-all", "onnxruntime",
+    "--collect-all", "av",
     "--add-data", "config.example.json;.",
     "control_panel.py"
 )

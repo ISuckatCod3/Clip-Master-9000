@@ -21,7 +21,7 @@ if (-not (Test-Path $VenvPython)) {
     python -m venv .venv
 }
 
-Write-Host "Installing Python dependencies, including Vosk..."
+Write-Host "Installing Python dependencies, including Vosk and faster-whisper..."
 & $VenvPython -m pip install --upgrade pip
 & $VenvPython -m pip install -r requirements.txt
 
@@ -34,12 +34,31 @@ $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
 if (-not $config.voice) {
     $config | Add-Member -MemberType NoteProperty -Name "voice" -Value ([pscustomobject]@{}) -Force
 }
+if (-not $config.local_whisper) {
+    $config | Add-Member -MemberType NoteProperty -Name "local_whisper" -Value ([pscustomobject]@{}) -Force
+}
+if (-not $config.rename_transcription_provider -or [string]::IsNullOrWhiteSpace([string]$config.rename_transcription_provider)) {
+    $config | Add-Member -MemberType NoteProperty -Name "rename_transcription_provider" -Value "local_whisper" -Force
+}
+if (-not $config.local_whisper.model_size) {
+    $config.local_whisper | Add-Member -MemberType NoteProperty -Name "model_size" -Value "base.en" -Force
+}
+if (-not $config.local_whisper.device) {
+    $config.local_whisper | Add-Member -MemberType NoteProperty -Name "device" -Value "auto" -Force
+}
+if (-not $config.local_whisper.compute_type) {
+    $config.local_whisper | Add-Member -MemberType NoteProperty -Name "compute_type" -Value "int8" -Force
+}
+if ($null -eq $config.local_whisper.cpu_threads) {
+    $config.local_whisper | Add-Member -MemberType NoteProperty -Name "cpu_threads" -Value 0 -Force
+}
 $configuredModelPath = [string]$config.voice.vosk_model_path
 if ([string]::IsNullOrWhiteSpace($configuredModelPath) -or $configuredModelPath -eq $PreviousDefaultModelPath) {
     Write-Host "Updating config.json to use the larger default Vosk model..."
     $config.voice | Add-Member -MemberType NoteProperty -Name "vosk_model_path" -Value $DefaultModelPath -Force
-    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPath -Encoding UTF8
 }
+$configJson = $config | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($ConfigPath, $configJson, [System.Text.UTF8Encoding]::new($false))
 
 if ($SkipVoskModel) {
     Write-Host "Skipping Vosk model download because -SkipVoskModel was provided."

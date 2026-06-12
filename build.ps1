@@ -67,7 +67,7 @@ if (-not $SkipVoskModel) {
 
 Write-Host ""
 Write-Host "Checking installed packages..."
-& $VenvPython -c "import cv2, mss, numpy, obsws_python, openai, sounddevice, vosk; print('imports ok')"
+& $VenvPython -c "import cv2, faster_whisper, mss, numpy, obsws_python, openai, sounddevice, vosk; print('imports ok')"
 
 Write-Host ""
 Write-Host "Build complete."
