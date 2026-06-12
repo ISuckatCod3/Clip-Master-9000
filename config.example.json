@@ -38,13 +38,15 @@
   "ffmpeg_path": "ffmpeg",
   "ai_provider": "openai",
   "voice_command_provider": "vosk",
+  "rename_transcription_provider": "openai",
   "name_live_clips": false,
   "filename_prefix": "",
   "filename_suffix": "",
   "openai": {
     "api_key": null,
     "api_key_env": "OPENAI_API_KEY",
-    "transcription_model": "gpt-4o-mini-transcribe",
+    "voice_command_transcription_model": "gpt-4o-mini-transcribe",
+    "rename_transcription_model": "gpt-4o-mini-transcribe",
     "naming_model": "gpt-4.1-mini",
     "max_frames_for_naming": 8
   },
@@ -52,8 +54,7 @@
     "base_url": "http://localhost:1234/v1",
     "api_key": null,
     "api_key_env": "LMSTUDIO_API_KEY",
-    "vision_model": "qwen3-vl-2b",
-    "transcription_model": "whisper-large-v3-turbo"
+    "vision_model": "qwen3-vl-2b"
   },
   "voice": {
     "provider": "vosk",

@@ -21,8 +21,8 @@ If so, you probably shouldn't be giving people tech advice.. yet here we are. To
 
 ```
 
- A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on. You can start/end replay buffer, save replay buffer, and switch scenes all through voice intent. It also uses the VL + transcription model of your choice to analyze your clips
- and recommend new file names so you can keep track of them. I currently have it setup to use LM Studio MCP server or OpenAI API. It can be easily retooled for any AI model run in various fashions. 
+A largely inefficent, slightly buggy work of jankery. It basically interprets voice commands from the actual mic you use to stream on. You can start/end replay buffer, save replay buffer, and switch scenes all through voice intent. It also uses a vision model plus optional rename-time audio transcription to analyze your clips
+and recommend new file names so you can keep track of them. I currently have it setup to use LM Studio or OpenAI for clip naming, OpenAI for rename-time transcription, and Vosk/OpenAI for live voice commands. It can be easily retooled for any AI model run in various fashions. 
 
 ## What It Does
 
@@ -192,6 +192,8 @@ Important fields:
 Voice settings:
 
 ```json
+"voice_command_provider": "vosk",
+"rename_transcription_provider": "openai",
 "voice": {
   "provider": "vosk",
   "vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
@@ -217,23 +219,28 @@ Test command matching without using the microphone, OBS, or capture devices:
 
 Matched phrases print the action that would run and exit with code `0`. Non-command text prints `No voice command matched` and exits with code `1`.
 
+Live voice commands and clip renaming transcription are separate settings:
+
+- `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening or `openai` for API transcription.
+- `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `openai` for transcript-aware names or `disabled` to name from frames only.
+- `openai.voice_command_transcription_model` is used only for OpenAI-powered live commands.
+- `openai.rename_transcription_model` is used only for transcript context during one-off, batch, live-watch, and optional immediate live-clip naming.
+
 ## LM Studio Setup
 
-LM Studio is optional and can be used for local AI clip naming and local voice-command transcription through its OpenAI-compatible server.
+LM Studio is optional and can be used for local AI clip naming through its OpenAI-compatible server. It is not used for live voice commands or audio transcription in this app. Live voice commands use Vosk by default, or OpenAI transcription if selected; rename-time audio transcription uses OpenAI when `rename_transcription_provider` is set to `openai`.
 
 1. Install LM Studio.
 2. Download a vision-capable model for clip naming.
-3. Download a local transcription model for voice commands if you want LM Studio to handle speech recognition.
-4. Start the LM Studio local server.
-5. Confirm the server URL is:
+3. Start the LM Studio local server.
+4. Confirm the server URL is:
 
 ```text
 http://localhost:1234/v1
 ```
 
-6. Set `ai_provider` to `lmstudio` in `config.json` if LM Studio should name clips.
-7. Set `voice_command_provider` to `lmstudio` if LM Studio should transcribe voice commands instead of Vosk or OpenAI.
-8. Set `lmstudio.vision_model` and `lmstudio.transcription_model` to the models you loaded in LM Studio.
+5. Set `ai_provider` to `lmstudio` in `config.json` if LM Studio should name clips.
+6. Set `lmstudio.vision_model` to the model you loaded in LM Studio.
 
 The LM Studio API key can stay blank for the local server; the app supplies a local placeholder automatically.
 
@@ -250,8 +257,7 @@ Example:
   "base_url": "http://localhost:1234/v1",
   "api_key": null,
   "api_key_env": "LMSTUDIO_API_KEY",
-  "vision_model": "qwen3-vl-2b",
-  "transcription_model": "whisper-large-v3-turbo"
+  "vision_model": "qwen3-vl-2b"
 }
 ```
 

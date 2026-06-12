@@ -81,13 +81,15 @@ DEFAULT_CONFIG = {
     "ffmpeg_path": "ffmpeg",
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
+    "rename_transcription_provider": "openai",
     "name_live_clips": False,
     "filename_prefix": "",
     "filename_suffix": "",
     "openai": {
         "api_key": None,
         "api_key_env": "OPENAI_API_KEY",
-        "transcription_model": "gpt-4o-mini-transcribe",
+        "voice_command_transcription_model": "gpt-4o-mini-transcribe",
+        "rename_transcription_model": "gpt-4o-mini-transcribe",
         "naming_model": "gpt-4.1-mini",
         "max_frames_for_naming": 8,
     },
@@ -95,7 +97,6 @@ DEFAULT_CONFIG = {
         "base_url": "http://localhost:1234/v1",
         "api_key_env": "LMSTUDIO_API_KEY",
         "vision_model": "qwen3-vl-2b",
-        "transcription_model": "whisper-large-v3-turbo",
     },
     "voice": {
         "provider": "vosk",
@@ -137,14 +138,19 @@ class ControlPanel(tk.Tk):
         self.clip_seconds = tk.StringVar(value=str(self.config.get("clip_seconds", 45)))
         self.fps = tk.StringVar(value=str(self.config.get("fps", 12)))
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
+        self.rename_transcription_provider = tk.StringVar(value=self.config.get("rename_transcription_provider", "openai"))
         self.name_live_clips = tk.BooleanVar(value=bool(self.config.get("name_live_clips", False)))
         self.filename_prefix = tk.StringVar(value=self.config.get("filename_prefix", ""))
         self.filename_suffix = tk.StringVar(value=self.config.get("filename_suffix", ""))
         openai = self.config.get("openai", {})
         self.openai_api_key = tk.StringVar(value=openai.get("api_key") or "")
         self.openai_key_env = tk.StringVar(value=openai.get("api_key_env", "OPENAI_API_KEY"))
-        self.openai_transcription_model = tk.StringVar(
-            value=openai.get("transcription_model", "gpt-4o-mini-transcribe")
+        legacy_transcription_model = openai.get("transcription_model", "gpt-4o-mini-transcribe")
+        self.openai_voice_command_transcription_model = tk.StringVar(
+            value=openai.get("voice_command_transcription_model", legacy_transcription_model)
+        )
+        self.openai_rename_transcription_model = tk.StringVar(
+            value=openai.get("rename_transcription_model", legacy_transcription_model)
         )
         self.openai_naming_model = tk.StringVar(value=openai.get("naming_model", "gpt-4.1-mini"))
         self.openai_max_frames = tk.StringVar(value=str(openai.get("max_frames_for_naming", 8)))
@@ -152,9 +158,6 @@ class ControlPanel(tk.Tk):
         self.lmstudio_api_key = tk.StringVar(value=lmstudio.get("api_key") or "")
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
         self.lmstudio_model = tk.StringVar(value=lmstudio.get("vision_model", "qwen2.5-vl-7b-instruct"))
-        self.lmstudio_transcription_model = tk.StringVar(
-            value=lmstudio.get("transcription_model", "whisper-large-v3-turbo")
-        )
         self.lmstudio_key_env = tk.StringVar(value=lmstudio.get("api_key_env", "LMSTUDIO_API_KEY"))
         voice = self.config.get("voice", {})
         self.voice_provider = tk.StringVar(value=self.config.get("voice_command_provider", voice.get("provider", "vosk")))
@@ -176,6 +179,7 @@ class ControlPanel(tk.Tk):
         self.status = tk.StringVar(value="Idle")
         self.ai_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
         self.voice_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
+        self.rename_transcription_provider.trace_add("write", lambda *_args: self.update_ai_provider_fields())
 
         self.build_ui()
         self.update_ai_provider_fields()
@@ -395,8 +399,8 @@ class ControlPanel(tk.Tk):
             row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(live_frame, text="Voice commands").grid(row=5, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai", "lmstudio"), state="readonly").grid(
+        ttk.Label(live_frame, text="Live command listener").grid(row=5, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
             row=6, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Label(live_frame, text="Clip action").grid(row=5, column=1, sticky="w", padx=8, pady=(4, 2))
@@ -481,10 +485,17 @@ class ControlPanel(tk.Tk):
         ai_frame.grid(row=1, column=0, sticky="ew")
         for column in range(4):
             ai_frame.columnconfigure(column, weight=1)
-        ttk.Label(ai_frame, text="Provider").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+        ttk.Label(ai_frame, text="Rename AI provider").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
         ttk.Combobox(ai_frame, textvariable=self.ai_provider, values=("lmstudio", "openai"), state="readonly").grid(
             row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
+        ttk.Label(ai_frame, text="Rename transcription").grid(row=0, column=1, sticky="w", padx=8, pady=(8, 2))
+        ttk.Combobox(
+            ai_frame,
+            textvariable=self.rename_transcription_provider,
+            values=("openai", "disabled"),
+            state="readonly",
+        ).grid(row=1, column=1, sticky="ew", padx=8, pady=(0, 8))
         self.openai_fields = ttk.Frame(ai_frame)
         self.openai_fields.grid(row=2, column=0, columnspan=4, sticky="ew")
         for column in range(4):
@@ -499,13 +510,21 @@ class ControlPanel(tk.Tk):
         ttk.Entry(self.openai_fields, textvariable=self.openai_naming_model).grid(
             row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.openai_fields, text="Transcription model").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.openai_fields, textvariable=self.openai_transcription_model).grid(
+        ttk.Label(self.openai_fields, text="Live command transcription model").grid(
+            row=0, column=3, sticky="w", padx=8, pady=(4, 2)
+        )
+        ttk.Entry(self.openai_fields, textvariable=self.openai_voice_command_transcription_model).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Label(self.openai_fields, text="Max naming frames").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(self.openai_fields, textvariable=self.openai_max_frames).grid(
             row=3, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.openai_fields, text="Rename audio transcription model").grid(
+            row=2, column=1, sticky="w", padx=8, pady=(4, 2)
+        )
+        ttk.Entry(self.openai_fields, textvariable=self.openai_rename_transcription_model).grid(
+            row=3, column=1, sticky="ew", padx=8, pady=(0, 8)
         )
 
         self.lmstudio_fields = ttk.Frame(ai_frame)
@@ -520,17 +539,13 @@ class ControlPanel(tk.Tk):
         ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_model).grid(
             row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.lmstudio_fields, text="LM Studio transcription model").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_transcription_model).grid(
+        ttk.Label(self.lmstudio_fields, text="Token env var").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_key_env).grid(
             row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(self.lmstudio_fields, text="Token env var").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
-        ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_key_env).grid(
-            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
-        )
-        ttk.Label(self.lmstudio_fields, text="API key").grid(row=2, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(self.lmstudio_fields, text="API key").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(self.lmstudio_fields, textvariable=self.lmstudio_api_key, show="*").grid(
-            row=3, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 8)
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
         ttk.Checkbutton(
@@ -571,12 +586,13 @@ class ControlPanel(tk.Tk):
             return
         ai_provider = self.ai_provider.get().lower()
         voice_provider = self.voice_provider.get().lower()
-        if ai_provider == "openai" or voice_provider == "openai":
+        rename_transcription_provider = self.rename_transcription_provider.get().lower()
+        if ai_provider == "openai" or voice_provider == "openai" or rename_transcription_provider == "openai":
             self.openai_fields.grid()
         else:
             self.openai_fields.grid_remove()
 
-        if ai_provider == "lmstudio" or voice_provider == "lmstudio":
+        if ai_provider == "lmstudio":
             self.lmstudio_fields.grid()
         else:
             self.lmstudio_fields.grid_remove()
@@ -603,6 +619,11 @@ class ControlPanel(tk.Tk):
                 obs = DEFAULT_CONFIG["obs"].copy()
                 obs.update(loaded["obs"])
                 merged["obs"] = obs
+            if str(merged.get("voice_command_provider", "")).lower() == "lmstudio":
+                merged["voice_command_provider"] = "vosk"
+                merged["voice"]["provider"] = "vosk"
+            if str(merged.get("rename_transcription_provider", "")).lower() == "lmstudio":
+                merged["rename_transcription_provider"] = "openai"
             return merged
         return DEFAULT_CONFIG.copy()
 
@@ -619,13 +640,17 @@ class ControlPanel(tk.Tk):
             self.config["fps"] = int(self.fps.get())
             self.config["ffmpeg_path"] = self.ffmpeg_path.get() or "ffmpeg"
             self.config["ai_provider"] = self.ai_provider.get()
+            self.config["rename_transcription_provider"] = self.rename_transcription_provider.get()
             self.config["name_live_clips"] = self.name_live_clips.get()
             self.config["filename_prefix"] = self.filename_prefix.get()
             self.config["filename_suffix"] = self.filename_suffix.get()
             self.config["openai"] = {
                 "api_key": self.openai_api_key.get() or None,
                 "api_key_env": self.openai_key_env.get() or "OPENAI_API_KEY",
-                "transcription_model": self.openai_transcription_model.get() or "gpt-4o-mini-transcribe",
+                "voice_command_transcription_model": (
+                    self.openai_voice_command_transcription_model.get() or "gpt-4o-mini-transcribe"
+                ),
+                "rename_transcription_model": self.openai_rename_transcription_model.get() or "gpt-4o-mini-transcribe",
                 "naming_model": self.openai_naming_model.get() or "gpt-4.1-mini",
                 "max_frames_for_naming": int(self.openai_max_frames.get() or "8"),
             }
@@ -634,7 +659,6 @@ class ControlPanel(tk.Tk):
                 "api_key": self.lmstudio_api_key.get() or None,
                 "api_key_env": self.lmstudio_key_env.get() or "LMSTUDIO_API_KEY",
                 "vision_model": self.lmstudio_model.get() or "qwen2.5-vl-7b-instruct",
-                "transcription_model": self.lmstudio_transcription_model.get() or "whisper-large-v3-turbo",
             }
             self.config["voice_command_provider"] = self.voice_provider.get()
             self.config["voice"] = {

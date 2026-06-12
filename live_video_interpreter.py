@@ -126,7 +126,8 @@ def voice_command_action(
 class OpenAIConfig:
     api_key: str | None = None
     api_key_env: str = "OPENAI_API_KEY"
-    transcription_model: str = "gpt-4o-mini-transcribe"
+    voice_command_transcription_model: str = "gpt-4o-mini-transcribe"
+    rename_transcription_model: str = "gpt-4o-mini-transcribe"
     naming_model: str = "gpt-4.1-mini"
     max_frames_for_naming: int = 8
 
@@ -137,7 +138,6 @@ class LMStudioConfig:
     api_key: str | None = None
     api_key_env: str = "LMSTUDIO_API_KEY"
     vision_model: str = "qwen2.5-vl-7b-instruct"
-    transcription_model: str = "whisper-large-v3-turbo"
 
 
 @dataclass
@@ -190,6 +190,7 @@ class AppConfig:
     ffmpeg_path: str = "ffmpeg"
     ai_provider: str = "openai"
     voice_command_provider: str = "vosk"
+    rename_transcription_provider: str = "openai"
     name_live_clips: bool = False
     filename_prefix: str = ""
     filename_suffix: str = ""
@@ -258,8 +259,8 @@ class RollingClipper:
                 "Live Video Interpreter is running. Say 'clip that', 'start replay buffer', "
                 "'stop replay buffer', 'start recording', or 'stop recording'. Press Ctrl+C to stop."
             )
-        if self.config.voice_command_provider.lower() in {"openai", "lmstudio"}:
-            client, _model, label = self._transcription_client()
+        if self.config.voice_command_provider.lower() == "openai":
+            client, _model, label = self._voice_command_transcription_client()
             if client is None:
                 print(f"Voice command transcription is disabled because {label} is not configured. Use the UI Clip Now button.")
         try:
@@ -476,7 +477,7 @@ class RollingClipper:
         print(f"Unknown voice command provider: {self.config.voice_command_provider}")
 
     def _api_command_loop(self, provider: str) -> None:
-        client, model, label = self._transcription_client(provider)
+        client, model, label = self._voice_command_transcription_client()
         print(
             f"{label} voice commands enabled with transcription model: {model}. "
             f"Checking recent audio every {self.config.command_check_seconds} second(s).",
@@ -960,7 +961,7 @@ class RollingClipper:
         return "_".join(part for part in parts if part) or "clip"
 
     def _suggest_name(self, video_path: Path, audio_path: Path | None) -> str | None:
-        transcript = self._transcribe_file(audio_path) if audio_path else ""
+        transcript = self._rename_transcript(audio_path)
         frames = sample_video_frames(video_path, self.config.openai.max_frames_for_naming)
         provider = self.config.ai_provider.lower()
         if provider == "lmstudio":
@@ -1037,11 +1038,28 @@ class RollingClipper:
             print(f"LM Studio naming failed: {exc}")
             return None
 
-    def _transcription_client(self, provider: str | None = None) -> tuple[OpenAI | None, str, str]:
-        selected = (provider or self.config.voice_command_provider).lower()
-        if selected == "lmstudio":
-            return self.lmstudio_client, self.config.lmstudio.transcription_model, "LM Studio"
-        return self.openai_client, self.config.openai.transcription_model, "OpenAI"
+    def _voice_command_transcription_client(self) -> tuple[OpenAI | None, str, str]:
+        return self.openai_client, self.config.openai.voice_command_transcription_model, "OpenAI"
+
+    def _rename_transcript(self, audio_path: Path | None) -> str:
+        if not audio_path:
+            return ""
+        provider = self.config.rename_transcription_provider.lower()
+        if provider in {"", "disabled", "none", "off"}:
+            print("Rename audio transcription is disabled; naming from frames only.", flush=True)
+            return ""
+        if provider != "openai":
+            print(f"Unknown rename transcription provider: {self.config.rename_transcription_provider}", flush=True)
+            return ""
+        if self.openai_client is None:
+            print("OpenAI rename transcription is enabled, but OPENAI_API_KEY is not configured.", flush=True)
+            return ""
+        return self._transcribe_file(
+            audio_path,
+            client=self.openai_client,
+            model=self.config.openai.rename_transcription_model,
+            label="OpenAI rename",
+        )
 
     def _transcribe_file(
         self,
@@ -1051,11 +1069,9 @@ class RollingClipper:
         label: str = "OpenAI",
     ) -> str:
         selected_client = client or self.openai_client
-        selected_model = model or self.config.openai.transcription_model
+        selected_model = model or self.config.openai.rename_transcription_model
         if selected_client is None or not audio_path.exists() or audio_path.stat().st_size == 0:
             return ""
-        if label == "LM Studio":
-            return self._transcribe_file_lmstudio(audio_path, selected_client, selected_model)
         try:
             with audio_path.open("rb") as audio_file:
                 result = selected_client.audio.transcriptions.create(
@@ -1066,69 +1082,6 @@ class RollingClipper:
         except Exception as exc:
             print(f"{label} transcription failed: {exc}")
             return ""
-
-    def _transcribe_file_lmstudio(self, audio_path: Path, client: OpenAI, model: str) -> str:
-        audio_b64 = base64.b64encode(audio_path.read_bytes()).decode("ascii")
-        errors: list[str] = []
-        prompts: list[list[dict[str, Any]]] = [
-            [
-                {
-                    "type": "text",
-                    "text": "Transcribe this audio exactly. Return only the spoken words.",
-                },
-                {
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": audio_b64,
-                        "format": "wav",
-                    },
-                },
-            ],
-            [
-                {
-                    "type": "text",
-                    "text": "Transcribe this audio exactly. Return only the spoken words.",
-                },
-                {
-                    "type": "audio_url",
-                    "audio_url": {
-                        "url": f"data:audio/wav;base64,{audio_b64}",
-                    },
-                },
-            ],
-        ]
-        for content in prompts:
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": content}],
-                    temperature=0,
-                    max_tokens=64,
-                )
-                text = response.choices[0].message.content or ""
-                return text.strip()
-            except Exception as exc:
-                message = str(exc)
-                errors.append(message)
-                print(f"LM Studio chat transcription attempt failed: {message}", flush=True)
-                if "must have a 'type' field that is either 'text' or 'image_url'" in message:
-                    self.voice_transcription_unavailable = True
-                    print(
-                        "LM Studio rejected audio input on its chat endpoint. "
-                        "This LM Studio server currently accepts only text/image chat payloads, "
-                        "so it cannot drive live voice commands with this app.",
-                        flush=True,
-                    )
-                    break
-                if "Unsupported Media Type" in message or "application/json" in message:
-                    self.voice_transcription_unavailable = True
-                    print(
-                        "LM Studio rejected OpenAI-style audio upload. "
-                        "This server is not exposing a compatible audio transcription endpoint.",
-                        flush=True,
-                    )
-                    break
-        return ""
 
     def _transcribe_audio_array(
         self,
@@ -1251,10 +1204,62 @@ class RollingClipper:
             return self.config.audio_devices
         return (self.config.audio_device,)
 
+    def _device_default_sample_rate(self, device: int | str | None) -> int:
+        try:
+            info = sd.query_devices(device, "input")
+            default_rate = int(float(info.get("default_samplerate", self.config.audio_sample_rate)))
+            return default_rate or self.config.audio_sample_rate
+        except Exception:
+            return self.config.audio_sample_rate
+
+    def _resample_audio_chunk(self, chunk: np.ndarray, source_rate: int) -> np.ndarray:
+        if source_rate == self.config.audio_sample_rate or chunk.size == 0:
+            return chunk.astype(np.int16)
+        source_length = chunk.shape[0]
+        target_length = max(1, int(round(source_length * self.config.audio_sample_rate / source_rate)))
+        source_positions = np.linspace(0.0, 1.0, num=source_length, endpoint=False)
+        target_positions = np.linspace(0.0, 1.0, num=target_length, endpoint=False)
+        audio = chunk.astype(np.float32)
+        if audio.ndim == 1:
+            resampled = np.interp(target_positions, source_positions, audio)
+            return np.clip(resampled, -32768, 32767).astype(np.int16)
+        channels = [
+            np.interp(target_positions, source_positions, audio[:, channel])
+            for channel in range(audio.shape[1])
+        ]
+        return np.clip(np.stack(channels, axis=1), -32768, 32767).astype(np.int16)
+
+    def _open_audio_stream(
+        self,
+        device: int | str | None,
+        callback: Any,
+    ) -> tuple[sd.InputStream, int]:
+        sample_rates = [self.config.audio_sample_rate]
+        default_rate = self._device_default_sample_rate(device)
+        if default_rate not in sample_rates:
+            sample_rates.append(default_rate)
+        last_error: Exception | None = None
+        for sample_rate in sample_rates:
+            try:
+                stream = sd.InputStream(
+                    samplerate=sample_rate,
+                    channels=self.config.audio_channels,
+                    device=device,
+                    dtype="int16",
+                    callback=callback,
+                )
+                return stream, sample_rate
+            except Exception as exc:
+                last_error = exc
+                if sample_rate == self.config.audio_sample_rate:
+                    print(f"Audio input {device} rejected {sample_rate} Hz; trying default device rate {default_rate} Hz.")
+        raise last_error or RuntimeError(f"Could not open audio input {device}")
+
     def _start_audio_recorders(self) -> list[AudioRecorder]:
         recorders: list[AudioRecorder] = []
         for device in self._configured_audio_devices():
             frames: list[np.ndarray] = []
+            input_sample_rate = self._device_default_sample_rate(device)
 
             def audio_callback(
                 indata: np.ndarray,
@@ -1266,20 +1271,27 @@ class RollingClipper:
             ) -> None:
                 if status:
                     print(f"Audio warning on {captured_device}: {status}")
-                chunk = indata.copy()
+                chunk = self._resample_audio_chunk(indata.copy(), input_sample_rate)
                 captured_frames.append(chunk)
                 self.audio_chunks.put((captured_device, chunk))
 
             try:
-                stream = sd.InputStream(
-                    samplerate=self.config.audio_sample_rate,
-                    channels=self.config.audio_channels,
-                    device=device,
-                    dtype="int16",
-                    callback=audio_callback,
-                )
+                stream, opened_sample_rate = self._open_audio_stream(device, audio_callback)
+                input_sample_rate = opened_sample_rate
                 stream.start()
-                recorders.append(AudioRecorder(device=device, frames=frames, stream=stream))
+                if opened_sample_rate != self.config.audio_sample_rate:
+                    print(
+                        f"Audio input {device} opened at {opened_sample_rate} Hz; "
+                        f"resampling to {self.config.audio_sample_rate} Hz."
+                    )
+                recorders.append(
+                    AudioRecorder(
+                        device=device,
+                        frames=frames,
+                        stream=stream,
+                        input_sample_rate=opened_sample_rate,
+                    )
+                )
             except Exception as exc:
                 print(f"Audio input unavailable for {device}: {exc}")
         return recorders
@@ -1354,6 +1366,19 @@ def load_config(path: Path) -> AppConfig:
     lmstudio_raw = raw.get("lmstudio", {})
     voice_raw = raw.get("voice", {})
     obs_raw = raw.get("obs", {})
+    voice_command_provider = str(raw.get("voice_command_provider", AppConfig.voice_command_provider)).lower()
+    if voice_command_provider == "lmstudio":
+        print("LM Studio live voice commands are no longer supported; falling back to Vosk.")
+        voice_command_provider = "vosk"
+    rename_transcription_provider = str(
+        raw.get("rename_transcription_provider", AppConfig.rename_transcription_provider)
+    ).lower()
+    if rename_transcription_provider == "lmstudio":
+        print("LM Studio audio transcription is no longer supported; using OpenAI for rename transcription.")
+        rename_transcription_provider = "openai"
+    legacy_openai_transcription_model = str(
+        openai_raw.get("transcription_model", OpenAIConfig.rename_transcription_model)
+    )
     return AppConfig(
         clip_seconds=int(raw.get("clip_seconds", AppConfig.clip_seconds)),
         segment_seconds=int(raw.get("segment_seconds", AppConfig.segment_seconds)),
@@ -1379,14 +1404,20 @@ def load_config(path: Path) -> AppConfig:
         poll_seconds=float(raw.get("poll_seconds", AppConfig.poll_seconds)),
         ffmpeg_path=str(raw.get("ffmpeg_path", AppConfig.ffmpeg_path)),
         ai_provider=str(raw.get("ai_provider", AppConfig.ai_provider)),
-        voice_command_provider=str(raw.get("voice_command_provider", AppConfig.voice_command_provider)),
+        voice_command_provider=voice_command_provider,
+        rename_transcription_provider=rename_transcription_provider,
         name_live_clips=bool(raw.get("name_live_clips", AppConfig.name_live_clips)),
         filename_prefix=str(raw.get("filename_prefix", AppConfig.filename_prefix)),
         filename_suffix=str(raw.get("filename_suffix", AppConfig.filename_suffix)),
         openai=OpenAIConfig(
             api_key=openai_raw.get("api_key", OpenAIConfig.api_key),
             api_key_env=str(openai_raw.get("api_key_env", OpenAIConfig.api_key_env)),
-            transcription_model=str(openai_raw.get("transcription_model", OpenAIConfig.transcription_model)),
+            voice_command_transcription_model=str(
+                openai_raw.get("voice_command_transcription_model", legacy_openai_transcription_model)
+            ),
+            rename_transcription_model=str(
+                openai_raw.get("rename_transcription_model", legacy_openai_transcription_model)
+            ),
             naming_model=str(openai_raw.get("naming_model", OpenAIConfig.naming_model)),
             max_frames_for_naming=int(openai_raw.get("max_frames_for_naming", OpenAIConfig.max_frames_for_naming)),
         ),
@@ -1395,9 +1426,6 @@ def load_config(path: Path) -> AppConfig:
             api_key=lmstudio_raw.get("api_key", LMStudioConfig.api_key),
             api_key_env=str(lmstudio_raw.get("api_key_env", LMStudioConfig.api_key_env)),
             vision_model=str(lmstudio_raw.get("vision_model", LMStudioConfig.vision_model)),
-            transcription_model=str(
-                lmstudio_raw.get("transcription_model", LMStudioConfig.transcription_model)
-            ),
         ),
         voice=VoiceConfig(
             provider=str(voice_raw.get("provider", VoiceConfig.provider)),
