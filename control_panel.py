@@ -24,7 +24,7 @@ ICON_PATH = BUNDLE_DIR / "assets" / "app.ico"
 APP_NAME = "Clip Master 9000"
 REPO_URL = "https://github.com/ISuckatCod3/Clip-Master-9000"
 WORKER_ARG_SETS = {
-    "Start Live Clipper": [],
+    "Start Live Clipper": ["--live-clipper"],
     "Save OBS Replay": ["--save-obs-replay-buffer"],
     "Start OBS Renamer": ["--watch-obs-clips"],
     "Batch Rename Existing": ["--batch-rename-obs-clips"],
@@ -381,32 +381,38 @@ class ControlPanel(tk.Tk):
 
         ttk.Label(live_frame, text="Clip seconds").grid(row=2, column=1, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(live_frame, textvariable=self.clip_seconds).grid(row=3, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Local-buffer clips only", style="Muted.TLabel").grid(
+            row=4, column=1, sticky="w", padx=8, pady=(0, 2)
+        )
 
         ttk.Label(live_frame, text="FPS").grid(row=2, column=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(live_frame, textvariable=self.fps).grid(row=3, column=2, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Local-buffer clips only", style="Muted.TLabel").grid(
+            row=4, column=2, sticky="w", padx=8, pady=(0, 2)
+        )
 
         ttk.Button(live_frame, text="Use OBS Projector Mode", command=self.use_obs_projector_mode).grid(
             row=3, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
 
-        ttk.Label(live_frame, text="Voice commands").grid(row=4, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(live_frame, text="Voice commands").grid(row=5, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai", "lmstudio"), state="readonly").grid(
-            row=5, column=0, sticky="ew", padx=8, pady=(0, 8)
+            row=6, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(live_frame, text="Clip action").grid(row=4, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(live_frame, text="Clip action").grid(row=5, column=1, sticky="w", padx=8, pady=(4, 2))
         ttk.Combobox(live_frame, textvariable=self.clip_action, values=("obs_replay_buffer", "local_buffer"), state="readonly").grid(
-            row=5, column=1, sticky="ew", padx=8, pady=(0, 8)
+            row=6, column=1, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Button(live_frame, text="Start Live Clipper", command=self.start_live_clipper).grid(
-            row=5, column=2, sticky="ew", padx=8, pady=(0, 8)
+            row=6, column=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Button(live_frame, text="Clip Now", command=self.clip_now).grid(row=5, column=3, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Button(live_frame, text="Clip Now", command=self.clip_now).grid(row=6, column=3, sticky="ew", padx=8, pady=(0, 8))
 
         ttk.Label(live_frame, text="Select one or more input devices to monitor").grid(
-            row=6, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
+            row=7, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
         )
         live_naming_frame = ttk.Frame(live_frame)
-        live_naming_frame.grid(row=6, column=3, sticky="w", padx=8, pady=(4, 2))
+        live_naming_frame.grid(row=7, column=3, sticky="w", padx=8, pady=(4, 2))
         ttk.Checkbutton(
             live_naming_frame,
             text="Name live clips immediately",
@@ -418,9 +424,9 @@ class ControlPanel(tk.Tk):
             style="DangerBold.TLabel",
         ).pack(anchor="w")
         self.audio_list = tk.Listbox(live_frame, height=5, selectmode=tk.MULTIPLE, exportselection=False)
-        self.audio_list.grid(row=7, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
+        self.audio_list.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
         audio_buttons = ttk.Frame(live_frame)
-        audio_buttons.grid(row=7, column=3, sticky="nsew", padx=8, pady=(0, 8))
+        audio_buttons.grid(row=8, column=3, sticky="nsew", padx=8, pady=(0, 8))
         ttk.Button(audio_buttons, text="Refresh Audio", command=self.refresh_audio_devices).pack(fill=tk.X, pady=(0, 6))
         ttk.Button(audio_buttons, text="Use Line In + USB", command=self.use_default_audio_pair).pack(fill=tk.X)
 
@@ -776,7 +782,7 @@ class ControlPanel(tk.Tk):
 
     def start_live_clipper(self) -> None:
         self.save_from_ui()
-        self.start_worker_process([])
+        self.start_worker_process(["--live-clipper"])
 
     def clip_now(self) -> None:
         if not self.process or self.process.poll() is not None:

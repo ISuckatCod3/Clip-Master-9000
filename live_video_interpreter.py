@@ -48,6 +48,25 @@ def bundled_path(path: Path) -> Path:
     return bundled if bundled.exists() else path
 
 
+def is_vosk_model_root(path: Path) -> bool:
+    return (path / "am").is_dir() and (path / "conf").is_dir() and (path / "graph").is_dir()
+
+
+def resolve_vosk_model_path(path: Path) -> Path:
+    candidates = [path, path / path.name]
+    if not path.is_absolute():
+        bundled = BUNDLE_DIR / path
+        candidates.extend([bundled, bundled / bundled.name])
+    for candidate in candidates:
+        if is_vosk_model_root(candidate):
+            return candidate
+    if path.is_dir():
+        for child in path.iterdir():
+            if child.is_dir() and is_vosk_model_root(child):
+                return child
+    return path
+
+
 START_REPLAY_BUFFER_COMMANDS = ("start replay buffer",)
 STOP_REPLAY_BUFFER_COMMANDS = ("stop replay buffer",)
 START_RECORDING_COMMANDS = ("start recording",)
@@ -193,6 +212,7 @@ class AudioRecorder:
     device: int | str | None
     frames: list[np.ndarray]
     stream: sd.InputStream
+    input_sample_rate: int
 
 
 class RollingClipper:
@@ -202,6 +222,7 @@ class RollingClipper:
         self.segment_lock = threading.Lock()
         self.audio_chunks: queue.Queue[Any] = queue.Queue()
         self.stop_event = threading.Event()
+        self.voice_transcription_unavailable = False
         self.openai_client = self._build_openai_client()
         self.lmstudio_client = self._build_lmstudio_client()
         self.ffmpeg_path = self._resolve_ffmpeg(config.ffmpeg_path)
@@ -337,7 +358,7 @@ class RollingClipper:
         if not self.config.video_device_name:
             raise ValueError("video_device_name is required when video_source is 'directshow'")
 
-        while not self.stop_event.is_set():
+        while not self.stop_event.is_set() and not self.voice_transcription_unavailable:
             started = time.time()
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             video_path = self.config.buffer_dir / f"segment_{stamp}_{int(started)}.mp4"
@@ -446,31 +467,56 @@ class RollingClipper:
         if provider == "vosk":
             self._vosk_command_loop()
             return
-        if provider in {"openai", "lmstudio"}:
+        if provider == "openai":
             self._api_command_loop(provider)
+            return
+        if provider == "lmstudio":
+            print("LM Studio live voice commands are disabled because LM Studio does not expose compatible live audio transcription in this app. Use Vosk or OpenAI.")
             return
         print(f"Unknown voice command provider: {self.config.voice_command_provider}")
 
     def _api_command_loop(self, provider: str) -> None:
         client, model, label = self._transcription_client(provider)
+        print(
+            f"{label} voice commands enabled with transcription model: {model}. "
+            f"Checking recent audio every {self.config.command_check_seconds} second(s).",
+            flush=True,
+        )
+        checks_without_audio = 0
         while not self.stop_event.is_set():
             time.sleep(self.config.command_check_seconds)
             if client is None:
+                print(f"{label} transcription client is not configured.", flush=True)
                 continue
             chunks = self._drain_recent_audio()
             if not chunks:
+                checks_without_audio += 1
+                if checks_without_audio == 1 or checks_without_audio % 5 == 0:
+                    print(f"{label} voice check: no recent audio chunks available.", flush=True)
                 continue
+            checks_without_audio = 0
+            print(f"{label} voice check: transcribing {len(chunks)} audio chunk(s).", flush=True)
             text = self._transcribe_audio_array(chunks, prefix="command", client=client, model=model, label=label)
+            if self.voice_transcription_unavailable:
+                print(
+                    f"{label} voice command transcription is unavailable. "
+                    "Switch Voice commands to Vosk or OpenAI, or use a server endpoint that accepts audio input.",
+                    flush=True,
+                )
+                return
             if not text:
+                print(f"{label} voice check: transcription returned no text.", flush=True)
                 continue
             normalized = text.lower()
             action = self._voice_command_action(normalized)
             if action:
-                print(f"Voice command heard: {text.strip()}")
+                print(f"Voice command matched: {action.kind} from transcript: {text.strip()}", flush=True)
                 try:
                     self.handle_voice_action(action)
                 except Exception as exc:
-                    print(f"Could not run voice command: {exc}")
+                    print(f"Could not run voice command {action.kind}: {exc}", flush=True)
+            else:
+                print(f"{label} transcript did not match a command: {text.strip()}", flush=True)
 
     def _vosk_command_loop(self) -> None:
         if Model is None or KaldiRecognizer is None:
@@ -482,7 +528,11 @@ class RollingClipper:
             return
 
         print(f"Local voice commands enabled with Vosk model: {model_path}")
-        model = Model(str(model_path))
+        try:
+            model = Model(str(model_path))
+        except Exception as exc:
+            print(f"Could not load Vosk model at {model_path}: {exc}")
+            return
         recognizers: dict[str, Any] = {}
         last_triggered_at = 0.0
         while not self.stop_event.is_set():
@@ -520,6 +570,8 @@ class RollingClipper:
                     self.handle_voice_action(action)
                 except Exception as exc:
                     print(f"Could not run voice command: {exc}")
+            elif accepted:
+                print(f"Vosk transcript did not match a command: {normalized}", flush=True)
 
     def _is_voice_command(self, text: str) -> bool:
         return self._voice_command_action(text) is not None
@@ -554,6 +606,8 @@ class RollingClipper:
         print(f"Saved clip: {clip_path}")
 
     def handle_voice_action(self, action: VoiceAction) -> None:
+        target = f" -> {action.target}" if action.target else ""
+        print(f"Running voice action: {action.kind}{target}", flush=True)
         if action.kind == "clip":
             self.handle_clip_request()
             return
@@ -578,6 +632,12 @@ class RollingClipper:
         if obsws is None:
             raise RuntimeError("obsws-python is not installed. Run pip install -r requirements.txt.")
         password = self.config.obs.password or os.getenv(self.config.obs.password_env, "") or os.getenv("OBS_WEBSOCKET_PASSWORD", "")
+        auth_state = "password configured" if password else "no password configured"
+        print(
+            f"OBS WebSocket connect: {self.config.obs.host}:{self.config.obs.port} "
+            f"({auth_state}, env={self.config.obs.password_env})",
+            flush=True,
+        )
         return obsws.ReqClient(
             host=self.config.obs.host,
             port=self.config.obs.port,
@@ -595,37 +655,45 @@ class RollingClipper:
 
     def start_obs_replay_buffer(self) -> None:
         client = self._obs_client()
+        print("OBS WebSocket command: GetReplayBufferStatus", flush=True)
         status = client.get_replay_buffer_status()
         if getattr(status, "output_active", False):
             print("OBS replay buffer is already running.")
             return
+        print("OBS WebSocket command: StartReplayBuffer", flush=True)
         client.start_replay_buffer()
         print("OBS replay buffer start requested.")
 
     def stop_obs_replay_buffer(self) -> None:
         client = self._obs_client()
+        print("OBS WebSocket command: GetReplayBufferStatus", flush=True)
         status = client.get_replay_buffer_status()
         if not getattr(status, "output_active", False):
             print("OBS replay buffer is already stopped.")
             return
+        print("OBS WebSocket command: StopReplayBuffer", flush=True)
         client.stop_replay_buffer()
         print("OBS replay buffer stop requested.")
 
     def start_obs_recording(self) -> None:
         client = self._obs_client()
+        print("OBS WebSocket command: GetRecordStatus", flush=True)
         status = client.get_record_status()
         if getattr(status, "output_active", False):
             print("OBS recording is already running.")
             return
+        print("OBS WebSocket command: StartRecord", flush=True)
         client.start_record()
         print("OBS recording start requested.")
 
     def stop_obs_recording(self) -> None:
         client = self._obs_client()
+        print("OBS WebSocket command: GetRecordStatus", flush=True)
         status = client.get_record_status()
         if not getattr(status, "output_active", False):
             print("OBS recording is already stopped.")
             return
+        print("OBS WebSocket command: StopRecord", flush=True)
         client.stop_record()
         print("OBS recording stop requested.")
 
@@ -634,6 +702,7 @@ class RollingClipper:
         inventory = self._read_obs_scene_source_inventory(client)
         scene = self._best_obs_name_match(target, inventory["scenes"], "scene")
         if scene:
+            print(f"OBS WebSocket command: SetCurrentProgramScene scene={scene}", flush=True)
             client.set_current_program_scene(scene_name=scene)
             print(f"OBS program scene switched to: {scene}")
             return
@@ -651,8 +720,14 @@ class RollingClipper:
             raise RuntimeError(f"OBS source '{source}' is not present in any scene item.")
         selected = self._choose_scene_item_candidate(candidates, inventory.get("current_scene"))
         scene_name = selected["scene_name"]
+        print(f"OBS WebSocket command: SetCurrentProgramScene scene={scene_name}", flush=True)
         client.set_current_program_scene(scene_name=scene_name)
         if selected.get("scene_item_id") is not None and selected.get("scene_item_enabled") is False:
+            print(
+                "OBS WebSocket command: SetSceneItemEnabled "
+                f"scene={scene_name} item={selected['scene_item_id']} enabled=True",
+                flush=True,
+            )
             client.set_scene_item_enabled(
                 scene_name=scene_name,
                 scene_item_id=selected["scene_item_id"],
@@ -661,12 +736,14 @@ class RollingClipper:
         print(f"OBS source selected: {source} in scene {scene_name}")
 
     def _read_obs_scene_source_inventory(self, client: Any) -> dict[str, Any]:
+        print("OBS WebSocket command: GetSceneList", flush=True)
         scene_result = client.get_scene_list()
         scenes_raw = self._obs_value(scene_result, "scenes", default=[])
         current_scene = self._obs_value(scene_result, "current_program_scene_name", "currentProgramSceneName")
         scenes = [self._obs_value(scene, "scene_name", "sceneName") for scene in scenes_raw]
         scenes = [scene for scene in scenes if scene]
 
+        print("OBS WebSocket command: GetInputList", flush=True)
         inputs_result = client.get_input_list()
         inputs_raw = self._obs_value(inputs_result, "inputs", default=[])
         inputs = [self._obs_value(input_item, "input_name", "inputName") for input_item in inputs_raw]
@@ -675,6 +752,7 @@ class RollingClipper:
         scene_items: list[dict[str, Any]] = []
         for scene_name in scenes:
             try:
+                print(f"OBS WebSocket command: GetSceneItemList scene={scene_name}", flush=True)
                 items_result = client.get_scene_item_list(scene_name=scene_name)
             except Exception as exc:
                 print(f"Could not read OBS scene items for {scene_name}: {exc}")
@@ -744,9 +822,11 @@ class RollingClipper:
 
     def save_obs_replay_buffer(self) -> None:
         client = self._obs_client()
+        print("OBS WebSocket command: GetReplayBufferStatus", flush=True)
         status = client.get_replay_buffer_status()
         if not getattr(status, "output_active", False):
             raise RuntimeError("OBS replay buffer is not active. Start Replay Buffer in OBS first.")
+        print("OBS WebSocket command: SaveReplayBuffer", flush=True)
         client.save_replay_buffer()
         print("OBS replay buffer save requested.")
 
@@ -974,6 +1054,8 @@ class RollingClipper:
         selected_model = model or self.config.openai.transcription_model
         if selected_client is None or not audio_path.exists() or audio_path.stat().st_size == 0:
             return ""
+        if label == "LM Studio":
+            return self._transcribe_file_lmstudio(audio_path, selected_client, selected_model)
         try:
             with audio_path.open("rb") as audio_file:
                 result = selected_client.audio.transcriptions.create(
@@ -984,6 +1066,69 @@ class RollingClipper:
         except Exception as exc:
             print(f"{label} transcription failed: {exc}")
             return ""
+
+    def _transcribe_file_lmstudio(self, audio_path: Path, client: OpenAI, model: str) -> str:
+        audio_b64 = base64.b64encode(audio_path.read_bytes()).decode("ascii")
+        errors: list[str] = []
+        prompts: list[list[dict[str, Any]]] = [
+            [
+                {
+                    "type": "text",
+                    "text": "Transcribe this audio exactly. Return only the spoken words.",
+                },
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": audio_b64,
+                        "format": "wav",
+                    },
+                },
+            ],
+            [
+                {
+                    "type": "text",
+                    "text": "Transcribe this audio exactly. Return only the spoken words.",
+                },
+                {
+                    "type": "audio_url",
+                    "audio_url": {
+                        "url": f"data:audio/wav;base64,{audio_b64}",
+                    },
+                },
+            ],
+        ]
+        for content in prompts:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": content}],
+                    temperature=0,
+                    max_tokens=64,
+                )
+                text = response.choices[0].message.content or ""
+                return text.strip()
+            except Exception as exc:
+                message = str(exc)
+                errors.append(message)
+                print(f"LM Studio chat transcription attempt failed: {message}", flush=True)
+                if "must have a 'type' field that is either 'text' or 'image_url'" in message:
+                    self.voice_transcription_unavailable = True
+                    print(
+                        "LM Studio rejected audio input on its chat endpoint. "
+                        "This LM Studio server currently accepts only text/image chat payloads, "
+                        "so it cannot drive live voice commands with this app.",
+                        flush=True,
+                    )
+                    break
+                if "Unsupported Media Type" in message or "application/json" in message:
+                    self.voice_transcription_unavailable = True
+                    print(
+                        "LM Studio rejected OpenAI-style audio upload. "
+                        "This server is not exposing a compatible audio transcription endpoint.",
+                        flush=True,
+                    )
+                    break
+        return ""
 
     def _transcribe_audio_array(
         self,
@@ -1256,7 +1401,9 @@ def load_config(path: Path) -> AppConfig:
         ),
         voice=VoiceConfig(
             provider=str(voice_raw.get("provider", VoiceConfig.provider)),
-            vosk_model_path=bundled_path(Path(voice_raw.get("vosk_model_path", VoiceConfig.vosk_model_path))),
+            vosk_model_path=resolve_vosk_model_path(
+                bundled_path(Path(voice_raw.get("vosk_model_path", VoiceConfig.vosk_model_path)))
+            ),
             trigger_cooldown_seconds=float(
                 voice_raw.get("trigger_cooldown_seconds", VoiceConfig.trigger_cooldown_seconds)
             ),
@@ -1402,6 +1549,7 @@ def update_config_file(path: Path, updates: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rolling screen/audio clipper with voice-triggered naming.")
     parser.add_argument("--config", default="config.json", help="Path to config JSON.")
+    parser.add_argument("--live-clipper", action="store_true", help="Start the live voice-triggered clipper.")
     parser.add_argument("--list-audio-devices", action="store_true", help="Print available audio devices and exit.")
     parser.add_argument("--list-video-devices", action="store_true", help="Probe camera-style video devices and exit.")
     parser.add_argument("--list-capture-devices", action="store_true", help="List named Windows/DirectShow capture devices.")
@@ -1548,6 +1696,10 @@ def main() -> None:
         return
     if args.batch_rename_obs_clips:
         clipper.batch_rename_obs_clips(Path(args.rename_folder) if args.rename_folder else None)
+        return
+    if args.live_clipper:
+        print("Live clipper worker starting.", flush=True)
+        clipper.run()
         return
     clipper.run()
 
