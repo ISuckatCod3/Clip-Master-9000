@@ -221,7 +221,7 @@ Use `setup.ps1 -SkipVoskModel` if you plan to provide your own model path in `co
 Test command matching without using the microphone, OBS, or capture devices:
 
 ```powershell
-.\.venv\Scripts\python.exe -u .\live_video_interpreter.py --voice-command-smoke-test "clip that"
+.\.venv\Scripts\python.exe -u .\live_video_interpreter.py --voice-command-smoke-test "clippy clip that"
 ```
 
 Matched phrases print the action that would run and exit with code `0`. Non-command text prints `No voice command matched` and exits with code `1`.
@@ -229,6 +229,7 @@ Matched phrases print the action that would run and exit with code `0`. Non-comm
 Live voice commands and clip renaming transcription are separate settings:
 
 - `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening or `openai` for API transcription.
+- `voice.require_wake_phrase` keeps commands gated behind `clippy` or `clip master` by default. Say a wake phrase, then speak a command within `voice.wake_listen_seconds`.
 - `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `local_whisper` for faster local transcript-aware names, `vosk` for the large Vosk model, `openai` for API transcription, or `disabled` to name from frames only.
 - `local_whisper.model_size` can be a faster-whisper model name such as `base.en`, `small.en`, or a local model path. The first use may download the model.
 - `voice.rename_vosk_model_path` should point at the large Vosk model if `rename_transcription_provider` is set to `vosk`. This is separate from `voice.vosk_model_path`, so live commands can use a faster model later without downgrading Vosk rename transcripts.
@@ -286,6 +287,8 @@ setx OBS_WEBSOCKET_PASSWORD "your-password"
 
 Built in:
 
+- `clippy`, then one of the commands below
+- `clip master`, then one of the commands below
 - `clip that`
 - `save that`
 - `record that`
@@ -294,6 +297,23 @@ Built in:
 - `stop replay buffer`
 - `start recording`
 - `stop recording`
+
+OBS WebSocket request names used by this app:
+
+| OBS WebSocket request | Recommended voice phrase |
+| --- | --- |
+| `GetReplayBufferStatus` | `clippy start replay buffer` or `clippy stop replay buffer` |
+| `StartReplayBuffer` | `clippy start replay buffer` |
+| `StopReplayBuffer` | `clippy stop replay buffer` |
+| `SaveReplayBuffer` | Use the UI `Save OBS Replay` button or CLI helper. |
+| `GetRecordStatus` | `clippy start recording` or `clippy stop recording` |
+| `StartRecord` | `clippy start recording` |
+| `StopRecord` | `clippy stop recording` |
+| `GetSceneList` | `clippy switch to Gameplay` |
+| `GetInputList` | `clippy source Main Camera` |
+| `GetSceneItemList` | `clippy source Main Camera` |
+| `SetCurrentProgramScene` | `clippy switch to Gameplay` |
+| `SetSceneItemEnabled` | `clippy source Main Camera` |
 
 Optional OBS scene/source switching is off by default. Enable it with:
 
@@ -310,6 +330,31 @@ Then use explicit commands:
 - `source Elgato`
 
 `Elgato` is only an example source name. The app reads your actual OBS scene names and scene-item source names through WebSocket, then matches the spoken target against those names. If a name is ambiguous, it refuses to switch instead of guessing.
+
+For best voice matching, use proper names for OBS scenes and sources. Prefer names that sound like objects or layouts, such as `Gameplay`, `Starting Soon`, `Main Camera`, `Desk Mic`, or `Capture Card`. Avoid naming scenes or sources after command words or WebSocket request words, because those names can make the spoken intent ambiguous.
+
+Avoid scene/source names like:
+
+- `Start Recording`
+- `Stop Replay Buffer`
+- `Save Replay Buffer`
+- `Switch Scene`
+- `Get Scene List`
+- `Set Current Program Scene`
+- `Set Scene Item Enabled`
+- `Source`
+- `Scene`
+
+Better names:
+
+- `Gameplay`
+- `Starting Soon`
+- `BRB`
+- `Main Camera`
+- `Face Cam`
+- `Capture Card`
+- `Overlay Clean`
+- `Overlay Full`
 
 ## CLI Helpers
 

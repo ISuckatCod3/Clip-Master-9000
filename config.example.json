@@ -68,7 +68,13 @@
     "rename_vosk_model_path": "models/vosk-model-en-us-0.22-lgraph",
     "trigger_cooldown_seconds": 2,
     "clip_action": "obs_replay_buffer",
-    "enable_obs_scene_source_switching": false
+    "enable_obs_scene_source_switching": false,
+    "require_wake_phrase": true,
+    "wake_phrases": [
+      "clippy",
+      "clip master"
+    ],
+    "wake_listen_seconds": 8
   },
   "obs": {
     "host": "localhost",

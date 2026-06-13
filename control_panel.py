@@ -111,6 +111,9 @@ DEFAULT_CONFIG = {
         "trigger_cooldown_seconds": 2,
         "clip_action": "obs_replay_buffer",
         "enable_obs_scene_source_switching": False,
+        "require_wake_phrase": True,
+        "wake_phrases": ["clippy", "clip master"],
+        "wake_listen_seconds": 8,
     },
     "obs": {
         "host": "localhost",
@@ -119,6 +122,44 @@ DEFAULT_CONFIG = {
         "request_timeout_seconds": 5,
     },
 }
+
+
+def normalize_audio_device_values(value: object) -> list[int | str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, (list, tuple)):
+        raw_values = value
+    elif isinstance(value, str) and "," in value:
+        raw_values = [part.strip() for part in value.split(",")]
+    else:
+        raw_values = [value]
+
+    devices: list[int | str] = []
+    for raw_value in raw_values:
+        if raw_value is None or raw_value == "":
+            continue
+        if isinstance(raw_value, int):
+            devices.append(raw_value)
+            continue
+        device = str(raw_value).strip()
+        if not device:
+            continue
+        try:
+            devices.append(int(device))
+        except ValueError:
+            devices.append(device)
+    return devices
+
+
+def load_json_config(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        cleaned = re.sub(r",\s*([}\]])", r"\1", text)
+        if cleaned == text:
+            raise
+        return json.loads(cleaned)
 
 
 class ControlPanel(tk.Tk):
@@ -183,6 +224,14 @@ class ControlPanel(tk.Tk):
         self.enable_obs_scene_source_switching = tk.BooleanVar(
             value=bool(voice.get("enable_obs_scene_source_switching", False))
         )
+        self.require_wake_phrase = tk.BooleanVar(value=bool(voice.get("require_wake_phrase", True)))
+        wake_phrases = voice.get("wake_phrases", ["clippy", "clip master"])
+        if isinstance(wake_phrases, str):
+            wake_phrases_text = wake_phrases
+        else:
+            wake_phrases_text = ", ".join(str(phrase) for phrase in wake_phrases)
+        self.wake_phrases = tk.StringVar(value=wake_phrases_text)
+        self.wake_listen_seconds = tk.StringVar(value=str(voice.get("wake_listen_seconds", 8)))
         obs = self.config.get("obs", {})
         self.obs_host = tk.StringVar(value=obs.get("host", "localhost"))
         self.obs_port = tk.StringVar(value=str(obs.get("port", 4455)))
@@ -429,11 +478,23 @@ class ControlPanel(tk.Tk):
         )
         ttk.Button(live_frame, text="Clip Now", command=self.clip_now).grid(row=6, column=3, sticky="ew", padx=8, pady=(0, 8))
 
+        ttk.Checkbutton(
+            live_frame,
+            text="Require wake word",
+            variable=self.require_wake_phrase,
+        ).grid(row=7, column=0, sticky="w", padx=8, pady=(4, 8))
+        ttk.Label(live_frame, text="Wake words").grid(row=7, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(live_frame, textvariable=self.wake_phrases).grid(row=8, column=1, sticky="ew", padx=8, pady=(0, 8))
+        ttk.Label(live_frame, text="Awake seconds").grid(row=7, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(live_frame, textvariable=self.wake_listen_seconds).grid(
+            row=8, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+
         ttk.Label(live_frame, text="Select one or more input devices to monitor").grid(
-            row=7, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
+            row=9, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 2)
         )
         live_naming_frame = ttk.Frame(live_frame)
-        live_naming_frame.grid(row=7, column=3, sticky="w", padx=8, pady=(4, 2))
+        live_naming_frame.grid(row=7, column=3, rowspan=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Checkbutton(
             live_naming_frame,
             text="Name live clips immediately",
@@ -445,9 +506,9 @@ class ControlPanel(tk.Tk):
             style="DangerBold.TLabel",
         ).pack(anchor="w")
         self.audio_list = tk.Listbox(live_frame, height=5, selectmode=tk.MULTIPLE, exportselection=False)
-        self.audio_list.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
+        self.audio_list.grid(row=10, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 8))
         audio_buttons = ttk.Frame(live_frame)
-        audio_buttons.grid(row=8, column=3, sticky="nsew", padx=8, pady=(0, 8))
+        audio_buttons.grid(row=10, column=3, sticky="nsew", padx=8, pady=(0, 8))
         ttk.Button(audio_buttons, text="Refresh Audio", command=self.refresh_audio_devices).pack(fill=tk.X, pady=(0, 6))
         ttk.Button(audio_buttons, text="Use Line In + USB", command=self.use_default_audio_pair).pack(fill=tk.X)
 
@@ -657,8 +718,7 @@ class ControlPanel(tk.Tk):
 
     def load_config(self) -> dict:
         if CONFIG_PATH.exists():
-            with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
-                loaded = json.load(config_file)
+            loaded = load_json_config(CONFIG_PATH)
             merged = DEFAULT_CONFIG.copy()
             merged.update(loaded)
             if "openai" in loaded:
@@ -686,8 +746,14 @@ class ControlPanel(tk.Tk):
                 merged["voice"]["provider"] = "vosk"
             if str(merged.get("rename_transcription_provider", "")).lower() == "lmstudio":
                 merged["rename_transcription_provider"] = "openai"
+            audio_devices = normalize_audio_device_values(merged.get("audio_devices"))
+            if not audio_devices:
+                audio_devices = normalize_audio_device_values(merged.get("audio_device"))
+            merged["audio_devices"] = audio_devices
             return merged
-        return DEFAULT_CONFIG.copy()
+        merged = DEFAULT_CONFIG.copy()
+        merged["audio_devices"] = normalize_audio_device_values(merged.get("audio_devices"))
+        return merged
 
     def save_from_ui(self) -> None:
         try:
@@ -736,6 +802,13 @@ class ControlPanel(tk.Tk):
                 "trigger_cooldown_seconds": 2,
                 "clip_action": self.clip_action.get(),
                 "enable_obs_scene_source_switching": self.enable_obs_scene_source_switching.get(),
+                "require_wake_phrase": self.require_wake_phrase.get(),
+                "wake_phrases": [
+                    phrase.strip().lower()
+                    for phrase in self.wake_phrases.get().split(",")
+                    if phrase.strip()
+                ],
+                "wake_listen_seconds": float(self.wake_listen_seconds.get() or "8"),
             }
             self.config["obs"] = {
                 "host": self.obs_host.get() or "localhost",
@@ -835,9 +908,13 @@ class ControlPanel(tk.Tk):
         self.append_log(f"Found {len(devices)} named video devices")
 
     def load_audio_selection(self) -> None:
-        configured = set(self.config.get("audio_devices") or [])
+        configured_values = normalize_audio_device_values(self.config.get("audio_devices"))
+        if not configured_values:
+            configured_values = normalize_audio_device_values(self.config.get("audio_device"))
+        configured = {str(device) for device in configured_values}
+        self.audio_list.selection_clear(0, tk.END)
         for list_index, (device_index, label) in enumerate(self.audio_devices):
-            if device_index in configured or str(device_index) in configured:
+            if str(device_index) in configured:
                 self.audio_list.selection_set(list_index)
             elif "Line In (Realtek(R) Audio)" in label or "Line (2- USB AUDIO  CODEC)" in label:
                 if not configured:

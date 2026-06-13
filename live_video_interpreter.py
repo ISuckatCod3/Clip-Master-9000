@@ -161,6 +161,9 @@ class VoiceConfig:
     trigger_cooldown_seconds: float = 2.0
     clip_action: str = "obs_replay_buffer"
     enable_obs_scene_source_switching: bool = False
+    require_wake_phrase: bool = True
+    wake_phrases: tuple[str, ...] = ("clippy", "clip master")
+    wake_listen_seconds: float = 8.0
 
 
 @dataclass
@@ -231,6 +234,47 @@ class AudioRecorder:
     input_sample_rate: int
 
 
+def normalize_audio_device_values(value: Any) -> tuple[int | str | None, ...]:
+    if value is None or value == "":
+        return ()
+    if isinstance(value, (list, tuple)):
+        raw_values = value
+    elif isinstance(value, str) and "," in value:
+        raw_values = [part.strip() for part in value.split(",")]
+    else:
+        raw_values = (value,)
+
+    devices: list[int | str | None] = []
+    for raw_value in raw_values:
+        if raw_value is None:
+            devices.append(None)
+            continue
+        if raw_value == "":
+            continue
+        if isinstance(raw_value, int):
+            devices.append(raw_value)
+            continue
+        device = str(raw_value).strip()
+        if not device:
+            continue
+        try:
+            devices.append(int(device))
+        except ValueError:
+            devices.append(device)
+    return tuple(devices)
+
+
+def load_json_config(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        cleaned = re.sub(r",\s*([}\]])", r"\1", text)
+        if cleaned == text:
+            raise
+        return json.loads(cleaned)
+
+
 class RollingClipper:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -243,6 +287,7 @@ class RollingClipper:
         self.lmstudio_client = self._build_lmstudio_client()
         self.vosk_model_cache: Model | None = None
         self.local_whisper_model_cache: Any | None = None
+        self.voice_awake_until = 0.0
         self.ffmpeg_path = self._resolve_ffmpeg(config.ffmpeg_path)
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
         self.config.buffer_dir.mkdir(parents=True, exist_ok=True)
@@ -275,6 +320,13 @@ class RollingClipper:
             print(
                 "Live Video Interpreter is running. Say 'clip that', 'start replay buffer', "
                 "'stop replay buffer', 'start recording', or 'stop recording'. Press Ctrl+C to stop."
+            )
+        if self.config.voice.require_wake_phrase:
+            phrases = " or ".join(f"'{phrase}'" for phrase in self.config.voice.wake_phrases)
+            print(
+                f"Wake phrase gate is enabled. Say {phrases}, then speak a command within "
+                f"{self.config.voice.wake_listen_seconds:g} second(s).",
+                flush=True,
             )
         if self.config.voice_command_provider.lower() == "openai":
             client, _model, label = self._voice_command_transcription_client()
@@ -526,13 +578,18 @@ class RollingClipper:
                 print(f"{label} voice check: transcription returned no text.", flush=True)
                 continue
             normalized = text.lower()
-            action = self._voice_command_action(normalized)
+            was_awake = self._voice_is_awake()
+            heard_wake_phrase = self._contains_wake_phrase(normalized) if self.config.voice.require_wake_phrase else False
+            action = self._voice_command_action_after_wake(normalized)
             if action:
                 print(f"Voice command matched: {action.kind} from transcript: {text.strip()}", flush=True)
                 try:
                     self.handle_voice_action(action)
                 except Exception as exc:
                     print(f"Could not run voice command {action.kind}: {exc}", flush=True)
+            elif self.config.voice.require_wake_phrase and not was_awake:
+                if not heard_wake_phrase:
+                    print(f"{label} speech ignored before wake phrase.", flush=True)
             else:
                 print(f"{label} transcript did not match a command: {text.strip()}", flush=True)
 
@@ -577,7 +634,9 @@ class RollingClipper:
             normalized = result_text.lower()
             if not normalized:
                 continue
-            action = self._voice_command_action(normalized)
+            was_awake = self._voice_is_awake()
+            heard_wake_phrase = self._contains_wake_phrase(normalized) if self.config.voice.require_wake_phrase else False
+            action = self._voice_command_action_after_wake(normalized)
             if action:
                 now = time.time()
                 if now - last_triggered_at < self.config.voice.trigger_cooldown_seconds:
@@ -589,10 +648,14 @@ class RollingClipper:
                 except Exception as exc:
                     print(f"Could not run voice command: {exc}")
             elif accepted:
-                print(f"Vosk transcript did not match a command: {normalized}", flush=True)
+                if self.config.voice.require_wake_phrase and not was_awake:
+                    if not heard_wake_phrase:
+                        print("Vosk speech ignored before wake phrase.", flush=True)
+                else:
+                    print(f"Vosk transcript did not match a command: {normalized}", flush=True)
 
     def _is_voice_command(self, text: str) -> bool:
-        return self._voice_command_action(text) is not None
+        return self._voice_command_action_after_wake(text) is not None
 
     def _voice_command_action(self, text: str) -> VoiceAction | None:
         return voice_command_action(
@@ -600,6 +663,47 @@ class RollingClipper:
             self.config.voice_commands,
             self.config.voice.enable_obs_scene_source_switching,
         )
+
+    def _voice_is_awake(self) -> bool:
+        return not self.config.voice.require_wake_phrase or time.time() <= self.voice_awake_until
+
+    def _contains_wake_phrase(self, text: str) -> bool:
+        normalized = text.lower()
+        for phrase in self.config.voice.wake_phrases:
+            phrase = phrase.lower().strip()
+            if phrase and re.search(rf"\b{re.escape(phrase)}\b", normalized):
+                return True
+        return False
+
+    def _strip_wake_phrases(self, text: str) -> str:
+        cleaned = text.lower()
+        for phrase in self.config.voice.wake_phrases:
+            phrase = phrase.lower().strip()
+            if phrase:
+                cleaned = re.sub(rf"\b{re.escape(phrase)}\b", " ", cleaned)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def _voice_command_action_after_wake(self, text: str) -> VoiceAction | None:
+        normalized = text.lower().strip()
+        if not self.config.voice.require_wake_phrase:
+            return self._voice_command_action(normalized)
+
+        now = time.time()
+        if self._contains_wake_phrase(normalized):
+            self.voice_awake_until = now + self.config.voice.wake_listen_seconds
+            command_text = self._strip_wake_phrases(normalized)
+            print(
+                f"Wake phrase heard. Listening for commands for "
+                f"{self.config.voice.wake_listen_seconds:g} second(s).",
+                flush=True,
+            )
+            if command_text:
+                return self._voice_command_action(command_text)
+            return None
+
+        if now <= self.voice_awake_until:
+            return self._voice_command_action(normalized)
+        return None
 
     def _extract_obs_switch_target(self, normalized: str) -> str | None:
         return extract_obs_switch_target(normalized)
@@ -721,7 +825,7 @@ class RollingClipper:
         scene = self._best_obs_name_match(target, inventory["scenes"], "scene")
         if scene:
             print(f"OBS WebSocket command: SetCurrentProgramScene scene={scene}", flush=True)
-            client.set_current_program_scene(scene_name=scene)
+            client.set_current_program_scene(scene)
             print(f"OBS program scene switched to: {scene}")
             return
 
@@ -739,18 +843,14 @@ class RollingClipper:
         selected = self._choose_scene_item_candidate(candidates, inventory.get("current_scene"))
         scene_name = selected["scene_name"]
         print(f"OBS WebSocket command: SetCurrentProgramScene scene={scene_name}", flush=True)
-        client.set_current_program_scene(scene_name=scene_name)
+        client.set_current_program_scene(scene_name)
         if selected.get("scene_item_id") is not None and selected.get("scene_item_enabled") is False:
             print(
                 "OBS WebSocket command: SetSceneItemEnabled "
                 f"scene={scene_name} item={selected['scene_item_id']} enabled=True",
                 flush=True,
             )
-            client.set_scene_item_enabled(
-                scene_name=scene_name,
-                scene_item_id=selected["scene_item_id"],
-                scene_item_enabled=True,
-            )
+            client.set_scene_item_enabled(scene_name, selected["scene_item_id"], True)
         print(f"OBS source selected: {source} in scene {scene_name}")
 
     def _read_obs_scene_source_inventory(self, client: Any) -> dict[str, Any]:
@@ -771,7 +871,7 @@ class RollingClipper:
         for scene_name in scenes:
             try:
                 print(f"OBS WebSocket command: GetSceneItemList scene={scene_name}", flush=True)
-                items_result = client.get_scene_item_list(scene_name=scene_name)
+                items_result = client.get_scene_item_list(scene_name)
             except Exception as exc:
                 print(f"Could not read OBS scene items for {scene_name}: {exc}")
                 continue
@@ -1491,7 +1591,7 @@ class RollingClipper:
 def load_config(path: Path) -> AppConfig:
     if not path.exists():
         return AppConfig()
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw = load_json_config(path)
     openai_raw = raw.get("openai", {})
     lmstudio_raw = raw.get("lmstudio", {})
     local_whisper_raw = raw.get("local_whisper", {})
@@ -1510,6 +1610,11 @@ def load_config(path: Path) -> AppConfig:
     legacy_openai_transcription_model = str(
         openai_raw.get("transcription_model", OpenAIConfig.rename_transcription_model)
     )
+    audio_devices = normalize_audio_device_values(raw.get("audio_devices", AppConfig.audio_devices))
+    audio_device = raw.get("audio_device", AppConfig.audio_device)
+    if not audio_devices:
+        audio_devices = normalize_audio_device_values(audio_device)
+        audio_device = audio_devices[0] if len(audio_devices) == 1 else audio_device
     return AppConfig(
         clip_seconds=int(raw.get("clip_seconds", AppConfig.clip_seconds)),
         segment_seconds=int(raw.get("segment_seconds", AppConfig.segment_seconds)),
@@ -1521,8 +1626,8 @@ def load_config(path: Path) -> AppConfig:
         camera_height=raw.get("camera_height", AppConfig.camera_height),
         video_device_name=raw.get("video_device_name", AppConfig.video_device_name),
         audio_device_name=raw.get("audio_device_name", AppConfig.audio_device_name),
-        audio_device=raw.get("audio_device", AppConfig.audio_device),
-        audio_devices=tuple(raw.get("audio_devices", AppConfig.audio_devices)),
+        audio_device=audio_device,
+        audio_devices=audio_devices,
         audio_sample_rate=int(raw.get("audio_sample_rate", AppConfig.audio_sample_rate)),
         audio_channels=int(raw.get("audio_channels", AppConfig.audio_channels)),
         command_check_seconds=int(raw.get("command_check_seconds", AppConfig.command_check_seconds)),
@@ -1582,6 +1687,9 @@ def load_config(path: Path) -> AppConfig:
                     VoiceConfig.enable_obs_scene_source_switching,
                 )
             ),
+            require_wake_phrase=bool(voice_raw.get("require_wake_phrase", VoiceConfig.require_wake_phrase)),
+            wake_phrases=tuple(voice_raw.get("wake_phrases", VoiceConfig.wake_phrases)),
+            wake_listen_seconds=float(voice_raw.get("wake_listen_seconds", VoiceConfig.wake_listen_seconds)),
         ),
         obs=OBSConfig(
             host=str(obs_raw.get("host", OBSConfig.host)),
@@ -1766,11 +1874,8 @@ def main() -> None:
     config = load_config(config_path)
 
     if args.voice_command_smoke_test is not None:
-        action = voice_command_action(
-            args.voice_command_smoke_test,
-            config.voice_commands,
-            config.voice.enable_obs_scene_source_switching,
-        )
+        clipper = RollingClipper(config)
+        action = clipper._voice_command_action_after_wake(args.voice_command_smoke_test)
         if action is None:
             print(f"No voice command matched: {args.voice_command_smoke_test}")
             raise SystemExit(1)
