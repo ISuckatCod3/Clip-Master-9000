@@ -235,6 +235,7 @@ Live voice commands and clip renaming transcription are separate settings:
 - `voice.rename_vosk_model_path` should point at the large Vosk model if `rename_transcription_provider` is set to `vosk`. This is separate from `voice.vosk_model_path`, so live commands can use a faster model later without downgrading Vosk rename transcripts.
 - `openai.voice_command_transcription_model` is used only for OpenAI-powered live commands.
 - `openai.rename_transcription_model` is used only for transcript context during one-off, batch, live-watch, and optional immediate live-clip naming.
+- `openai.max_frames_for_naming` defaults to `20` and controls how many evenly spaced video frames are sent to either OpenAI or LM Studio for clip naming. This uses standard multimodal message parts for both providers; for local LM Studio models such as Qwen3 VL or Gemma vision models, lower the value if your model runs out of context or VRAM.
 
 ## LM Studio Setup
 

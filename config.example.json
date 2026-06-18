@@ -48,7 +48,7 @@
     "voice_command_transcription_model": "gpt-4o-mini-transcribe",
     "rename_transcription_model": "gpt-4o-mini-transcribe",
     "naming_model": "gpt-4.1-mini",
-    "max_frames_for_naming": 8
+    "max_frames_for_naming": 20
   },
   "lmstudio": {
     "base_url": "http://localhost:1234/v1",

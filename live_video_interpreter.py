@@ -134,7 +134,7 @@ class OpenAIConfig:
     voice_command_transcription_model: str = "gpt-4o-mini-transcribe"
     rename_transcription_model: str = "gpt-4o-mini-transcribe"
     naming_model: str = "gpt-4.1-mini"
-    max_frames_for_naming: int = 8
+    max_frames_for_naming: int = 20
 
 
 @dataclass
@@ -287,6 +287,7 @@ class RollingClipper:
         self.lmstudio_client = self._build_lmstudio_client()
         self.vosk_model_cache: Model | None = None
         self.local_whisper_model_cache: Any | None = None
+        self.local_whisper_model_load_failed = False
         self.voice_awake_until = 0.0
         self.ffmpeg_path = self._resolve_ffmpeg(config.ffmpeg_path)
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -1021,6 +1022,7 @@ class RollingClipper:
             print(f"No OBS clips found in {folder}.", flush=True)
             return
         print(f"Batch scanning {len(paths)} OBS clip(s) in {folder}.", flush=True)
+        self._preload_batch_rename_models()
         renamed_count = 0
         skipped_count = 0
         failed_count = 0
@@ -1046,6 +1048,13 @@ class RollingClipper:
             f"Renamed {renamed_count}, skipped {skipped_count}, failed {failed_count}, scanned {len(paths)} clip(s).",
             flush=True,
         )
+
+    def _preload_batch_rename_models(self) -> None:
+        provider = self.config.rename_transcription_provider.lower()
+        if provider in {"local_whisper", "whisper", "faster_whisper"}:
+            print("Preloading local Whisper rename transcription model for this batch.", flush=True)
+            if self._load_local_whisper_model() is not None:
+                print("Local Whisper rename transcription model is loaded and will be reused.", flush=True)
 
     def rename_clip_file(self, path: Path) -> Path:
         if not path.exists():
@@ -1267,6 +1276,8 @@ class RollingClipper:
             return None
         if self.local_whisper_model_cache is not None:
             return self.local_whisper_model_cache
+        if self.local_whisper_model_load_failed:
+            return None
         config = self.config.local_whisper
         model_size_or_path = str(config.model_size or "base.en")
         kwargs: dict[str, Any] = {
@@ -1284,6 +1295,7 @@ class RollingClipper:
             self.local_whisper_model_cache = WhisperModel(model_size_or_path, **kwargs)
             return self.local_whisper_model_cache
         except Exception as exc:
+            self.local_whisper_model_load_failed = True
             print(f"Could not load local Whisper model {model_size_or_path}: {exc}", flush=True)
             return None
 

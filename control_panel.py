@@ -91,7 +91,7 @@ DEFAULT_CONFIG = {
         "voice_command_transcription_model": "gpt-4o-mini-transcribe",
         "rename_transcription_model": "gpt-4o-mini-transcribe",
         "naming_model": "gpt-4.1-mini",
-        "max_frames_for_naming": 8,
+        "max_frames_for_naming": 20,
     },
     "lmstudio": {
         "base_url": "http://localhost:1234/v1",
@@ -203,7 +203,7 @@ class ControlPanel(tk.Tk):
             value=openai.get("rename_transcription_model", legacy_transcription_model)
         )
         self.openai_naming_model = tk.StringVar(value=openai.get("naming_model", "gpt-4.1-mini"))
-        self.openai_max_frames = tk.StringVar(value=str(openai.get("max_frames_for_naming", 8)))
+        self.openai_max_frames = tk.StringVar(value=str(openai.get("max_frames_for_naming", 20)))
         lmstudio = self.config.get("lmstudio", {})
         self.lmstudio_api_key = tk.StringVar(value=lmstudio.get("api_key") or "")
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
@@ -780,7 +780,7 @@ class ControlPanel(tk.Tk):
                 ),
                 "rename_transcription_model": self.openai_rename_transcription_model.get() or "gpt-4o-mini-transcribe",
                 "naming_model": self.openai_naming_model.get() or "gpt-4.1-mini",
-                "max_frames_for_naming": int(self.openai_max_frames.get() or "8"),
+                "max_frames_for_naming": int(self.openai_max_frames.get() or "20"),
             }
             self.config["lmstudio"] = {
                 "base_url": self.lmstudio_base_url.get() or "http://localhost:1234/v1",
