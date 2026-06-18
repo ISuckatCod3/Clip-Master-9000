@@ -56,6 +56,9 @@ if ($Target -eq "Portable") {
         "run_listener.bat",
         "run_ui.bat",
         "run_obs_renamer.bat",
+        "run_whisperlive_server.bat",
+        "run_whisperlive_server.ps1",
+        "run_whisperlive_server.py",
         "save_obs_replay.bat",
         "setup.ps1",
         "setup.bat",
@@ -91,6 +94,8 @@ if ($Target -eq "Portable") {
 
 Write-Host "Installing PyInstaller..."
 & $VenvPython -m pip install pyinstaller
+Write-Host "Installing WhisperLive for EXE packaging..."
+& $VenvPython -m pip install whisper-live
 
 $ExistingExe = Join-Path (Join-Path $DistRoot $ExeName) "$ExeName.exe"
 if (Test-Path $ExistingExe) {
@@ -111,7 +116,11 @@ $PyInstallerArgs = @(
     "--collect-all", "tokenizers",
     "--collect-all", "onnxruntime",
     "--collect-all", "av",
+    "--collect-all", "whisper_live",
     "--add-data", "config.example.json;.",
+    "--add-data", "run_whisperlive_server.bat;.",
+    "--add-data", "run_whisperlive_server.ps1;.",
+    "--add-data", "run_whisperlive_server.py;.",
     "control_panel.py"
 )
 

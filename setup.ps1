@@ -37,6 +37,9 @@ if (-not $config.voice) {
 if (-not $config.local_whisper) {
     $config | Add-Member -MemberType NoteProperty -Name "local_whisper" -Value ([pscustomobject]@{}) -Force
 }
+if (-not $config.whisperlive) {
+    $config | Add-Member -MemberType NoteProperty -Name "whisperlive" -Value ([pscustomobject]@{}) -Force
+}
 if (-not $config.rename_transcription_provider -or [string]::IsNullOrWhiteSpace([string]$config.rename_transcription_provider)) {
     $config | Add-Member -MemberType NoteProperty -Name "rename_transcription_provider" -Value "local_whisper" -Force
 }
@@ -54,6 +57,18 @@ if (-not $config.local_whisper.compute_type) {
 }
 if ($null -eq $config.local_whisper.cpu_threads) {
     $config.local_whisper | Add-Member -MemberType NoteProperty -Name "cpu_threads" -Value 0 -Force
+}
+if (-not $config.whisperlive.base_url) {
+    $config.whisperlive | Add-Member -MemberType NoteProperty -Name "base_url" -Value "http://localhost:8000/v1" -Force
+}
+if (-not $config.whisperlive.api_key_env) {
+    $config.whisperlive | Add-Member -MemberType NoteProperty -Name "api_key_env" -Value "WHISPERLIVE_API_KEY" -Force
+}
+if (-not $config.whisperlive.model) {
+    $config.whisperlive | Add-Member -MemberType NoteProperty -Name "model" -Value "base.en" -Force
+}
+if (-not $config.whisperlive.language) {
+    $config.whisperlive | Add-Member -MemberType NoteProperty -Name "language" -Value "en" -Force
 }
 $configuredModelPath = [string]$config.voice.vosk_model_path
 if ([string]::IsNullOrWhiteSpace($configuredModelPath) -or $configuredModelPath -eq $PreviousDefaultModelPath) {

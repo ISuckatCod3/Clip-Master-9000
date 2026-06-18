@@ -228,7 +228,7 @@ Matched phrases print the action that would run and exit with code `0`. Non-comm
 
 Live voice commands and clip renaming transcription are separate settings:
 
-- `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening or `openai` for API transcription.
+- `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening, `whisperlive` for a local WhisperLive server, or `openai` for API transcription.
 - `voice.require_wake_phrase` keeps commands gated behind `clippy` or `clip master` by default. Say a wake phrase, then speak a command within `voice.wake_listen_seconds`.
 - `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `local_whisper` for faster local transcript-aware names, `vosk` for the large Vosk model, `openai` for API transcription, or `disabled` to name from frames only.
 - `rename_transcription_audio_fraction` defaults to `0.5`, so rename transcription uses the first 50% of each clip's audio instead of transcribing the full clip. Set it to `1.0` if you want full-clip transcript context.
@@ -237,6 +237,22 @@ Live voice commands and clip renaming transcription are separate settings:
 - `openai.voice_command_transcription_model` is used only for OpenAI-powered live commands.
 - `openai.rename_transcription_model` is used only for transcript context during one-off, batch, live-watch, and optional immediate live-clip naming.
 - `openai.max_frames_for_naming` defaults to `20` and controls how many evenly spaced video frames are sent to either OpenAI or LM Studio for clip naming. This uses standard multimodal message parts for both providers; for local LM Studio models such as Qwen3 VL or Gemma vision models, lower the value if your model runs out of context or VRAM.
+
+## WhisperLive Voice Commands
+
+WhisperLive is optional and can provide local Whisper-powered voice command transcription through a long-running server. Set **Voice commands** to `whisperlive`, then use **Start WhisperLive** in the UI, or start it in a separate terminal:
+
+```powershell
+.\run_whisperlive_server.bat
+```
+
+The default REST endpoint is:
+
+```text
+http://localhost:8000/v1
+```
+
+The launcher starts WhisperLive with WebSocket port `9090`, REST port `8000`, `faster_whisper`, and `base.en`. WhisperLive installs on first launch if it is not already present in `.venv`.
 
 ## LM Studio Setup
 

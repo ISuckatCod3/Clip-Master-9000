@@ -57,6 +57,13 @@
     "api_key_env": "LMSTUDIO_API_KEY",
     "vision_model": "qwen3-vl-2b"
   },
+  "whisperlive": {
+    "base_url": "http://localhost:8000/v1",
+    "api_key": null,
+    "api_key_env": "WHISPERLIVE_API_KEY",
+    "model": "base.en",
+    "language": "en"
+  },
   "local_whisper": {
     "model_size": "base.en",
     "device": "auto",

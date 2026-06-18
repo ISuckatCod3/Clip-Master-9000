@@ -11,6 +11,7 @@ import ctypes
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from urllib.parse import urlparse
 
 import mss
 import sounddevice as sd
@@ -99,6 +100,13 @@ DEFAULT_CONFIG = {
         "api_key_env": "LMSTUDIO_API_KEY",
         "vision_model": "qwen3-vl-2b",
     },
+    "whisperlive": {
+        "base_url": "http://localhost:8000/v1",
+        "api_key": None,
+        "api_key_env": "WHISPERLIVE_API_KEY",
+        "model": "base.en",
+        "language": "en",
+    },
     "local_whisper": {
         "model_size": "base.en",
         "device": "auto",
@@ -174,6 +182,7 @@ class ControlPanel(tk.Tk):
         self.enable_windows_dark_title_bar()
         self.configure_dark_style()
         self.process: subprocess.Popen[str] | None = None
+        self.whisperlive_process: subprocess.Popen[str] | None = None
         self.video_devices: list[str] = []
         self.audio_devices: list[tuple[int, str]] = []
         self.monitors: list[tuple[int, str]] = []
@@ -213,6 +222,12 @@ class ControlPanel(tk.Tk):
         self.lmstudio_base_url = tk.StringVar(value=lmstudio.get("base_url", "http://localhost:1234/v1"))
         self.lmstudio_model = tk.StringVar(value=lmstudio.get("vision_model", "qwen2.5-vl-7b-instruct"))
         self.lmstudio_key_env = tk.StringVar(value=lmstudio.get("api_key_env", "LMSTUDIO_API_KEY"))
+        whisperlive = self.config.get("whisperlive", {})
+        self.whisperlive_base_url = tk.StringVar(value=whisperlive.get("base_url", "http://localhost:8000/v1"))
+        self.whisperlive_model = tk.StringVar(value=whisperlive.get("model", "base.en"))
+        self.whisperlive_language = tk.StringVar(value=whisperlive.get("language", "en"))
+        self.whisperlive_key_env = tk.StringVar(value=whisperlive.get("api_key_env", "WHISPERLIVE_API_KEY"))
+        self.whisperlive_api_key = tk.StringVar(value=whisperlive.get("api_key") or "")
         local_whisper = self.config.get("local_whisper", {})
         self.local_whisper_model = tk.StringVar(value=local_whisper.get("model_size", "base.en"))
         self.local_whisper_device = tk.StringVar(value=local_whisper.get("device", "auto"))
@@ -470,7 +485,7 @@ class ControlPanel(tk.Tk):
         )
 
         ttk.Label(live_frame, text="Live command listener").grid(row=5, column=0, sticky="w", padx=8, pady=(4, 2))
-        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai"), state="readonly").grid(
+        ttk.Combobox(live_frame, textvariable=self.voice_provider, values=("vosk", "openai", "whisperlive"), state="readonly").grid(
             row=6, column=0, sticky="ew", padx=8, pady=(0, 8)
         )
         ttk.Label(live_frame, text="Clip action").grid(row=5, column=1, sticky="w", padx=8, pady=(4, 2))
@@ -616,8 +631,34 @@ class ControlPanel(tk.Tk):
         ttk.Entry(self.local_whisper_fields, textvariable=self.local_whisper_cpu_threads).grid(
             row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
         )
+        self.whisperlive_fields = ttk.Frame(ai_frame)
+        self.whisperlive_fields.grid(row=3, column=0, columnspan=4, sticky="ew")
+        for column in range(4):
+            self.whisperlive_fields.columnconfigure(column, weight=1)
+        ttk.Label(self.whisperlive_fields, text="WhisperLive URL").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.whisperlive_fields, textvariable=self.whisperlive_base_url).grid(
+            row=1, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.whisperlive_fields, text="WhisperLive model").grid(row=0, column=1, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.whisperlive_fields, textvariable=self.whisperlive_model).grid(
+            row=1, column=1, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.whisperlive_fields, text="Language").grid(row=0, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.whisperlive_fields, textvariable=self.whisperlive_language).grid(
+            row=1, column=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Label(self.whisperlive_fields, text="Token env var").grid(row=0, column=3, sticky="w", padx=8, pady=(4, 2))
+        ttk.Entry(self.whisperlive_fields, textvariable=self.whisperlive_key_env).grid(
+            row=1, column=3, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(self.whisperlive_fields, text="Start WhisperLive", command=self.start_whisperlive_server).grid(
+            row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
+        ttk.Button(self.whisperlive_fields, text="Stop WhisperLive", command=self.stop_whisperlive_server).grid(
+            row=2, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+        )
         self.openai_fields = ttk.Frame(ai_frame)
-        self.openai_fields.grid(row=3, column=0, columnspan=4, sticky="ew")
+        self.openai_fields.grid(row=4, column=0, columnspan=4, sticky="ew")
         for column in range(4):
             self.openai_fields.columnconfigure(column, weight=1)
         ttk.Label(self.openai_fields, text="API key env var").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
@@ -650,7 +691,7 @@ class ControlPanel(tk.Tk):
         )
 
         self.lmstudio_fields = ttk.Frame(ai_frame)
-        self.lmstudio_fields.grid(row=4, column=0, columnspan=4, sticky="ew")
+        self.lmstudio_fields.grid(row=5, column=0, columnspan=4, sticky="ew")
         for column in range(4):
             self.lmstudio_fields.columnconfigure(column, weight=1)
         ttk.Label(self.lmstudio_fields, text="LM Studio base URL").grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
@@ -674,14 +715,14 @@ class ControlPanel(tk.Tk):
             ai_frame,
             text="Enable OBS scene/source voice switching",
             variable=self.enable_obs_scene_source_switching,
-        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 8))
-        ttk.Label(ai_frame, text="Filename prefix").grid(row=6, column=0, sticky="w", padx=8, pady=(4, 2))
+        ).grid(row=6, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 8))
+        ttk.Label(ai_frame, text="Filename prefix").grid(row=7, column=0, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_prefix).grid(
-            row=7, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=8, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
-        ttk.Label(ai_frame, text="Filename suffix").grid(row=6, column=2, sticky="w", padx=8, pady=(4, 2))
+        ttk.Label(ai_frame, text="Filename suffix").grid(row=7, column=2, sticky="w", padx=8, pady=(4, 2))
         ttk.Entry(ai_frame, textvariable=self.filename_suffix).grid(
-            row=7, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
+            row=8, column=2, columnspan=2, sticky="ew", padx=8, pady=(0, 8)
         )
 
         action_frame = ttk.Frame(rest_frame)
@@ -714,6 +755,11 @@ class ControlPanel(tk.Tk):
         else:
             self.openai_fields.grid_remove()
 
+        if voice_provider == "whisperlive":
+            self.whisperlive_fields.grid()
+        else:
+            self.whisperlive_fields.grid_remove()
+
         if ai_provider == "lmstudio":
             self.lmstudio_fields.grid()
         else:
@@ -737,6 +783,10 @@ class ControlPanel(tk.Tk):
                 lmstudio = DEFAULT_CONFIG["lmstudio"].copy()
                 lmstudio.update(loaded["lmstudio"])
                 merged["lmstudio"] = lmstudio
+            if "whisperlive" in loaded:
+                whisperlive = DEFAULT_CONFIG["whisperlive"].copy()
+                whisperlive.update(loaded["whisperlive"])
+                merged["whisperlive"] = whisperlive
             if "local_whisper" in loaded:
                 local_whisper = DEFAULT_CONFIG["local_whisper"].copy()
                 local_whisper.update(loaded["local_whisper"])
@@ -797,6 +847,13 @@ class ControlPanel(tk.Tk):
                 "api_key": self.lmstudio_api_key.get() or None,
                 "api_key_env": self.lmstudio_key_env.get() or "LMSTUDIO_API_KEY",
                 "vision_model": self.lmstudio_model.get() or "qwen2.5-vl-7b-instruct",
+            }
+            self.config["whisperlive"] = {
+                "base_url": self.whisperlive_base_url.get() or "http://localhost:8000/v1",
+                "api_key": self.whisperlive_api_key.get() or None,
+                "api_key_env": self.whisperlive_key_env.get() or "WHISPERLIVE_API_KEY",
+                "model": self.whisperlive_model.get() or "base.en",
+                "language": self.whisperlive_language.get() or "en",
             }
             self.config["local_whisper"] = {
                 "model_size": self.local_whisper_model.get() or "base.en",
@@ -926,9 +983,6 @@ class ControlPanel(tk.Tk):
         for list_index, (device_index, label) in enumerate(self.audio_devices):
             if str(device_index) in configured:
                 self.audio_list.selection_set(list_index)
-            elif "Line In (Realtek(R) Audio)" in label or "Line (2- USB AUDIO  CODEC)" in label:
-                if not configured:
-                    self.audio_list.selection_set(list_index)
 
     def use_default_audio_pair(self) -> None:
         self.audio_list.selection_clear(0, tk.END)
@@ -1029,10 +1083,66 @@ class ControlPanel(tk.Tk):
         self.status.set("Running")
         threading.Thread(target=self.read_process_output, daemon=True).start()
 
+    def start_whisperlive_server(self) -> None:
+        self.save_from_ui()
+        if self.whisperlive_process and self.whisperlive_process.poll() is None:
+            messagebox.showinfo("WhisperLive Running", "WhisperLive is already running.")
+            return
+        script_path = APP_DIR / "run_whisperlive_server.ps1"
+        if not script_path.exists():
+            messagebox.showerror("WhisperLive Missing", f"Could not find {script_path}")
+            return
+        rest_port = self.whisperlive_rest_port()
+        if getattr(sys, "frozen", False):
+            command = [
+                sys.executable,
+                "--whisperlive-server",
+                "--whisperlive-rest-port",
+                str(rest_port),
+                "--whisperlive-model",
+                self.whisperlive_model.get() or "base.en",
+            ]
+        else:
+            command = [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+                "-RestPort",
+                str(rest_port),
+                "-Model",
+                self.whisperlive_model.get() or "base.en",
+            ]
+        self.append_log(f"Starting WhisperLive: {' '.join(command)}")
+        creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        self.whisperlive_process = subprocess.Popen(
+            command,
+            cwd=APP_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            creationflags=creationflags,
+            env=self.child_env(),
+        )
+        threading.Thread(target=self.read_whisperlive_output, daemon=True).start()
+
+    def whisperlive_rest_port(self) -> int:
+        parsed = urlparse(self.whisperlive_base_url.get() or "http://localhost:8000/v1")
+        if parsed.port:
+            return parsed.port
+        if parsed.scheme == "https":
+            return 443
+        return 8000
+
     def child_env(self) -> dict[str, str]:
         env = os.environ.copy()
         if self.obs_password.get():
             env["OBS_WEBSOCKET_PASSWORD"] = self.obs_password.get()
+        if self.whisperlive_api_key.get():
+            env[self.whisperlive_key_env.get() or "WHISPERLIVE_API_KEY"] = self.whisperlive_api_key.get()
         return env
 
     def read_process_output(self) -> None:
@@ -1045,6 +1155,15 @@ class ControlPanel(tk.Tk):
         self.after(0, self.status.set, f"Stopped ({code})")
         self.after(0, self.append_log, f"Process exited with code {code}")
 
+    def read_whisperlive_output(self) -> None:
+        process = self.whisperlive_process
+        if not process or not process.stdout:
+            return
+        for line in process.stdout:
+            self.after(0, self.append_log, f"WhisperLive: {line.rstrip()}")
+        code = process.wait()
+        self.after(0, self.append_log, f"WhisperLive exited with code {code}")
+
     def stop_process(self) -> None:
         if self.process and self.process.poll() is None:
             self.append_log("Stopping process...")
@@ -1052,6 +1171,13 @@ class ControlPanel(tk.Tk):
             self.status.set("Stopping")
         else:
             self.status.set("Idle")
+
+    def stop_whisperlive_server(self) -> None:
+        if self.whisperlive_process and self.whisperlive_process.poll() is None:
+            self.append_log("Stopping WhisperLive...")
+            self.whisperlive_process.terminate()
+        else:
+            self.append_log("WhisperLive is not running.")
 
     def open_clips_folder(self) -> None:
         folder = APP_DIR / str(self.config.get("output_dir", "clips"))
@@ -1072,6 +1198,8 @@ class ControlPanel(tk.Tk):
             if not messagebox.askyesno("Process Running", "Stop the running process and close?"):
                 return
             self.stop_process()
+        if self.whisperlive_process and self.whisperlive_process.poll() is None:
+            self.stop_whisperlive_server()
         self.destroy()
 
 

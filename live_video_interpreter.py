@@ -146,6 +146,15 @@ class LMStudioConfig:
 
 
 @dataclass
+class WhisperLiveConfig:
+    base_url: str = "http://localhost:8000/v1"
+    api_key: str | None = None
+    api_key_env: str = "WHISPERLIVE_API_KEY"
+    model: str = "base.en"
+    language: str = "en"
+
+
+@dataclass
 class LocalWhisperConfig:
     model_size: str = "base.en"
     device: str = "auto"
@@ -214,6 +223,7 @@ class AppConfig:
     filename_suffix: str = ""
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     lmstudio: LMStudioConfig = field(default_factory=LMStudioConfig)
+    whisperlive: WhisperLiveConfig = field(default_factory=WhisperLiveConfig)
     local_whisper: LocalWhisperConfig = field(default_factory=LocalWhisperConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     obs: OBSConfig = field(default_factory=OBSConfig)
@@ -286,6 +296,7 @@ class RollingClipper:
         self.voice_transcription_unavailable = False
         self.openai_client = self._build_openai_client()
         self.lmstudio_client = self._build_lmstudio_client()
+        self.whisperlive_client = self._build_whisperlive_client()
         self.vosk_model_cache: Model | None = None
         self.local_whisper_model_cache: Any | None = None
         self.local_whisper_model_load_failed = False
@@ -304,6 +315,10 @@ class RollingClipper:
     def _build_lmstudio_client(self) -> OpenAI | None:
         token = self.config.lmstudio.api_key or os.getenv(self.config.lmstudio.api_key_env) or "lm-studio"
         return OpenAI(base_url=self.config.lmstudio.base_url, api_key=token)
+
+    def _build_whisperlive_client(self) -> OpenAI:
+        token = self.config.whisperlive.api_key or os.getenv(self.config.whisperlive.api_key_env) or "whisperlive"
+        return OpenAI(base_url=self.config.whisperlive.base_url, api_key=token)
 
     def run(self) -> None:
         capture_target = self._audio_only_loop if self.config.voice.clip_action == "obs_replay_buffer" else self._capture_loop_safe
@@ -330,8 +345,10 @@ class RollingClipper:
                 f"{self.config.voice.wake_listen_seconds:g} second(s).",
                 flush=True,
             )
-        if self.config.voice_command_provider.lower() == "openai":
-            client, _model, label = self._voice_command_transcription_client()
+        if self.config.voice_command_provider.lower() in {"openai", "whisperlive"}:
+            client, _model, label, _language = self._voice_command_transcription_client(
+                self.config.voice_command_provider.lower()
+            )
             if client is None:
                 print(f"Voice command transcription is disabled because {label} is not configured. Use the UI Clip Now button.")
         try:
@@ -539,7 +556,7 @@ class RollingClipper:
         if provider == "vosk":
             self._vosk_command_loop()
             return
-        if provider == "openai":
+        if provider in {"openai", "whisperlive"}:
             self._api_command_loop(provider)
             return
         if provider == "lmstudio":
@@ -548,7 +565,7 @@ class RollingClipper:
         print(f"Unknown voice command provider: {self.config.voice_command_provider}")
 
     def _api_command_loop(self, provider: str) -> None:
-        client, model, label = self._voice_command_transcription_client()
+        client, model, label, language = self._voice_command_transcription_client(provider)
         print(
             f"{label} voice commands enabled with transcription model: {model}. "
             f"Checking recent audio every {self.config.command_check_seconds} second(s).",
@@ -568,11 +585,18 @@ class RollingClipper:
                 continue
             checks_without_audio = 0
             print(f"{label} voice check: transcribing {len(chunks)} audio chunk(s).", flush=True)
-            text = self._transcribe_audio_array(chunks, prefix="command", client=client, model=model, label=label)
+            text = self._transcribe_audio_array(
+                chunks,
+                prefix="command",
+                client=client,
+                model=model,
+                label=label,
+                language=language,
+            )
             if self.voice_transcription_unavailable:
                 print(
                     f"{label} voice command transcription is unavailable. "
-                    "Switch Voice commands to Vosk or OpenAI, or use a server endpoint that accepts audio input.",
+                    "Switch Voice commands to Vosk/OpenAI, or check the local WhisperLive server.",
                     flush=True,
                 )
                 return
@@ -1181,8 +1205,11 @@ class RollingClipper:
             print(f"LM Studio naming failed: {exc}")
             return None
 
-    def _voice_command_transcription_client(self) -> tuple[OpenAI | None, str, str]:
-        return self.openai_client, self.config.openai.voice_command_transcription_model, "OpenAI"
+    def _voice_command_transcription_client(self, provider: str) -> tuple[OpenAI | None, str, str, str | None]:
+        if provider == "whisperlive":
+            language = self.config.whisperlive.language.strip() or None
+            return self.whisperlive_client, self.config.whisperlive.model, "WhisperLive", language
+        return self.openai_client, self.config.openai.voice_command_transcription_model, "OpenAI", None
 
     def _rename_transcript(self, audio_path: Path | None) -> str:
         if not audio_path:
@@ -1214,16 +1241,23 @@ class RollingClipper:
         client: OpenAI | None = None,
         model: str | None = None,
         label: str = "OpenAI",
+        language: str | None = None,
     ) -> str:
         selected_client = client or self.openai_client
         selected_model = model or self.config.openai.rename_transcription_model
         if selected_client is None or not audio_path.exists() or audio_path.stat().st_size == 0:
             return ""
         try:
+            kwargs: dict[str, Any] = {
+                "model": selected_model,
+                "file": None,
+            }
+            if language:
+                kwargs["language"] = language
             with audio_path.open("rb") as audio_file:
+                kwargs["file"] = audio_file
                 result = selected_client.audio.transcriptions.create(
-                    model=selected_model,
-                    file=audio_file,
+                    **kwargs,
                 )
             return getattr(result, "text", "") or ""
         except Exception as exc:
@@ -1349,6 +1383,7 @@ class RollingClipper:
         client: OpenAI | None = None,
         model: str | None = None,
         label: str = "OpenAI",
+        language: str | None = None,
     ) -> str:
         selected_client = client or self.openai_client
         if selected_client is None:
@@ -1357,7 +1392,13 @@ class RollingClipper:
             temp_path = Path(temp.name)
         try:
             self._write_wav(temp_path, chunks)
-            return self._transcribe_file(temp_path, client=selected_client, model=model, label=label)
+            return self._transcribe_file(
+                temp_path,
+                client=selected_client,
+                model=model,
+                label=label,
+                language=language,
+            )
         finally:
             temp_path.unlink(missing_ok=True)
 
@@ -1541,7 +1582,10 @@ class RollingClipper:
 
     def _start_audio_recorders(self) -> list[AudioRecorder]:
         recorders: list[AudioRecorder] = []
-        for device in self._configured_audio_devices():
+        devices = self._configured_audio_devices()
+        device_labels = ["system default" if device is None else str(device) for device in devices]
+        print(f"Configured audio input device(s): {', '.join(device_labels)}", flush=True)
+        for device in devices:
             frames: list[np.ndarray] = []
             input_sample_rate = self._device_default_sample_rate(device)
 
@@ -1563,10 +1607,11 @@ class RollingClipper:
                 stream, opened_sample_rate = self._open_audio_stream(device, audio_callback)
                 input_sample_rate = opened_sample_rate
                 stream.start()
+                opened_label = "system default" if device is None else str(device)
+                print(f"Audio input {opened_label} opened at {opened_sample_rate} Hz.", flush=True)
                 if opened_sample_rate != self.config.audio_sample_rate:
                     print(
-                        f"Audio input {device} opened at {opened_sample_rate} Hz; "
-                        f"resampling to {self.config.audio_sample_rate} Hz."
+                        f"Audio input {opened_label} is being resampled to {self.config.audio_sample_rate} Hz."
                     )
                 recorders.append(
                     AudioRecorder(
@@ -1648,6 +1693,7 @@ def load_config(path: Path) -> AppConfig:
     raw = load_json_config(path)
     openai_raw = raw.get("openai", {})
     lmstudio_raw = raw.get("lmstudio", {})
+    whisperlive_raw = raw.get("whisperlive", {})
     local_whisper_raw = raw.get("local_whisper", {})
     voice_raw = raw.get("voice", {})
     obs_raw = raw.get("obs", {})
@@ -1719,6 +1765,13 @@ def load_config(path: Path) -> AppConfig:
             api_key=lmstudio_raw.get("api_key", LMStudioConfig.api_key),
             api_key_env=str(lmstudio_raw.get("api_key_env", LMStudioConfig.api_key_env)),
             vision_model=str(lmstudio_raw.get("vision_model", LMStudioConfig.vision_model)),
+        ),
+        whisperlive=WhisperLiveConfig(
+            base_url=str(whisperlive_raw.get("base_url", WhisperLiveConfig.base_url)),
+            api_key=whisperlive_raw.get("api_key", WhisperLiveConfig.api_key),
+            api_key_env=str(whisperlive_raw.get("api_key_env", WhisperLiveConfig.api_key_env)),
+            model=str(whisperlive_raw.get("model", WhisperLiveConfig.model)),
+            language=str(whisperlive_raw.get("language", WhisperLiveConfig.language)),
         ),
         local_whisper=LocalWhisperConfig(
             model_size=str(local_whisper_raw.get("model_size", LocalWhisperConfig.model_size)),
@@ -1946,10 +1999,70 @@ def update_config_file(path: Path, updates: dict[str, Any]) -> None:
     print(f"Updated {path}")
 
 
+def run_whisperlive_server(
+    *,
+    host: str = "0.0.0.0",
+    port: int = 9090,
+    rest_port: int = 8000,
+    backend: str = "faster_whisper",
+    model: str = "base.en",
+    max_clients: int = 2,
+    max_connection_time: int = 43200,
+    cache_path: str = "models/whisper-live-cache",
+    api_key: str | None = None,
+) -> None:
+    try:
+        from whisper_live.server import TranscriptionServer
+    except Exception as exc:
+        print(f"WhisperLive is not available in this environment: {exc}", flush=True)
+        print("Run .\\run_whisperlive_server.bat from a source checkout, or rebuild the EXE with whisper-live installed.", flush=True)
+        raise SystemExit(1) from exc
+
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    print("Starting WhisperLive server", flush=True)
+    print(f"WebSocket: ws://localhost:{port}", flush=True)
+    print(f"REST: http://localhost:{rest_port}/v1", flush=True)
+    print(f"Backend: {backend}", flush=True)
+    print(f"Model: {model}", flush=True)
+    server = TranscriptionServer()
+    server.run(
+        host,
+        port=port,
+        backend=backend,
+        faster_whisper_custom_model_path=model,
+        single_model=True,
+        max_clients=max_clients,
+        max_connection_time=max_connection_time,
+        cache_path=cache_path,
+        rest_port=rest_port,
+        enable_rest=True,
+        api_key=api_key,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rolling screen/audio clipper with voice-triggered naming.")
     parser.add_argument("--config", default="config.json", help="Path to config JSON.")
     parser.add_argument("--live-clipper", action="store_true", help="Start the live voice-triggered clipper.")
+    parser.add_argument("--whisperlive-server", action="store_true", help="Run the local WhisperLive server.")
+    parser.add_argument("--whisperlive-host", default="0.0.0.0", help="Host for --whisperlive-server.")
+    parser.add_argument("--whisperlive-port", type=int, default=9090, help="WebSocket port for --whisperlive-server.")
+    parser.add_argument("--whisperlive-rest-port", type=int, default=8000, help="REST port for --whisperlive-server.")
+    parser.add_argument("--whisperlive-backend", default="faster_whisper", help="Backend for --whisperlive-server.")
+    parser.add_argument("--whisperlive-model", help="WhisperLive/faster-whisper model for --whisperlive-server.")
+    parser.add_argument("--whisperlive-max-clients", type=int, default=2, help="Max clients for --whisperlive-server.")
+    parser.add_argument(
+        "--whisperlive-max-connection-time",
+        type=int,
+        default=43200,
+        help="Max client lifetime in seconds for --whisperlive-server.",
+    )
+    parser.add_argument(
+        "--whisperlive-cache-path",
+        default="models/whisper-live-cache",
+        help="Model cache path for --whisperlive-server.",
+    )
+    parser.add_argument("--whisperlive-api-key", help="Optional API key for --whisperlive-server.")
     parser.add_argument("--list-audio-devices", action="store_true", help="Print available audio devices and exit.")
     parser.add_argument("--list-video-devices", action="store_true", help="Probe camera-style video devices and exit.")
     parser.add_argument("--list-capture-devices", action="store_true", help="List named Windows/DirectShow capture devices.")
@@ -1996,6 +2109,20 @@ def main() -> None:
     args = parser.parse_args()
     config_path = Path(args.config)
     config = load_config(config_path)
+
+    if args.whisperlive_server:
+        run_whisperlive_server(
+            host=args.whisperlive_host,
+            port=args.whisperlive_port,
+            rest_port=args.whisperlive_rest_port,
+            backend=args.whisperlive_backend,
+            model=args.whisperlive_model or config.whisperlive.model,
+            max_clients=args.whisperlive_max_clients,
+            max_connection_time=args.whisperlive_max_connection_time,
+            cache_path=args.whisperlive_cache_path,
+            api_key=args.whisperlive_api_key or config.whisperlive.api_key,
+        )
+        return
 
     if args.voice_command_smoke_test is not None:
         clipper = RollingClipper(config)
