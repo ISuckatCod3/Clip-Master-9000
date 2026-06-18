@@ -208,6 +208,7 @@ class AppConfig:
     ai_provider: str = "openai"
     voice_command_provider: str = "vosk"
     rename_transcription_provider: str = "local_whisper"
+    rename_transcription_audio_fraction: float = 0.5
     name_live_clips: bool = False
     filename_prefix: str = ""
     filename_suffix: str = ""
@@ -1139,7 +1140,7 @@ class RollingClipper:
                 "type": "text",
                 "text": (
                     "Name this video clip. Return only a concise filesystem-safe title, "
-                    "no extension. Use visible video context and transcript. If an RTSS, MSI "
+                    "no extension, no explanation, no markdown. Use visible video context and transcript. If an RTSS, MSI "
                     "Afterburner, or similar performance overlay is visible, read any clear PC "
                     "specs or benchmark context from it and append compact specs to the title, "
                     "such as GPU model, CPU model, resolution, FPS, or graphics preset. Do not "
@@ -1156,10 +1157,20 @@ class RollingClipper:
                 model=self.config.lmstudio.vision_model,
                 messages=[{"role": "user", "content": content}],
                 temperature=0.2,
-                max_tokens=32,
+                max_tokens=96,
             )
-            message = response.choices[0].message.content or ""
-            return message.strip()
+            choice = response.choices[0]
+            title = clean_generated_title(extract_chat_message_text(choice.message))
+            if not title:
+                finish_reason = getattr(choice, "finish_reason", None)
+                print(
+                    "LM Studio naming returned no title. "
+                    f"finish_reason={finish_reason or 'unknown'} model={self.config.lmstudio.vision_model}",
+                    flush=True,
+                )
+                return None
+            print(f"LM Studio generated title: {title}", flush=True)
+            return title
         except Exception as exc:
             print(f"LM Studio naming failed: {exc}")
             return None
@@ -1410,6 +1421,7 @@ class RollingClipper:
         return muxed_path
 
     def _extract_audio(self, video_path: Path, audio_path: Path) -> Path:
+        duration_limit = self._rename_audio_duration_limit_seconds(video_path)
         command = [
             self.ffmpeg_path,
             "-y",
@@ -1420,10 +1432,34 @@ class RollingClipper:
             "1",
             "-ar",
             str(self.config.audio_sample_rate),
-            str(audio_path),
         ]
+        if duration_limit:
+            command.extend(["-t", f"{duration_limit:.3f}"])
+        command.append(str(audio_path))
         subprocess.run(command, check=True, capture_output=True, text=True)
+        if duration_limit:
+            print(
+                f"Extracted first {self.config.rename_transcription_audio_fraction:.0%} "
+                f"of clip audio for rename transcription ({duration_limit:.1f}s).",
+                flush=True,
+            )
         return audio_path
+
+    def _rename_audio_duration_limit_seconds(self, video_path: Path) -> float | None:
+        fraction = self.config.rename_transcription_audio_fraction
+        if fraction <= 0 or fraction >= 1:
+            return None
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            return None
+        try:
+            frame_count = float(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
+        finally:
+            capture.release()
+        if frame_count <= 0 or fps <= 0:
+            return None
+        return max(1.0, (frame_count / fps) * fraction)
 
     def _prune_segments(self) -> None:
         keep_after = time.time() - (self.config.clip_seconds + self.config.segment_seconds * 3)
@@ -1654,6 +1690,9 @@ def load_config(path: Path) -> AppConfig:
         ai_provider=str(raw.get("ai_provider", AppConfig.ai_provider)),
         voice_command_provider=voice_command_provider,
         rename_transcription_provider=rename_transcription_provider,
+        rename_transcription_audio_fraction=float(
+            raw.get("rename_transcription_audio_fraction", AppConfig.rename_transcription_audio_fraction)
+        ),
         name_live_clips=bool(raw.get("name_live_clips", AppConfig.name_live_clips)),
         filename_prefix=str(raw.get("filename_prefix", AppConfig.filename_prefix)),
         filename_suffix=str(raw.get("filename_suffix", AppConfig.filename_suffix)),
@@ -1747,6 +1786,36 @@ def sanitize_filename(value: str, fallback: str = "clip") -> str:
     value = re.sub(r"\s+", "_", value.strip())
     value = value.strip("._-")
     return value[:80] or fallback
+
+
+def extract_chat_message_text(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                value = item.get("text") or item.get("content")
+                if value:
+                    parts.append(str(value))
+            else:
+                value = getattr(item, "text", None) or getattr(item, "content", None)
+                if value:
+                    parts.append(str(value))
+        return " ".join(parts)
+    return str(content or "")
+
+
+def clean_generated_title(value: str) -> str:
+    value = value.strip().strip('"').strip("'")
+    value = re.sub(r"(?is)<think>.*?</think>", "", value).strip()
+    value = re.sub(r"(?i)^title\s*:\s*", "", value).strip()
+    value = value.splitlines()[0].strip() if value else ""
+    value = re.sub(r"\.(mp4|mkv|mov|flv)$", "", value, flags=re.IGNORECASE).strip()
+    return sanitize_filename(value, fallback="") if value else ""
 
 
 def normalize_obs_name(value: str) -> str:

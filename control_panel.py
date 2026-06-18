@@ -82,6 +82,7 @@ DEFAULT_CONFIG = {
     "ai_provider": "openai",
     "voice_command_provider": "vosk",
     "rename_transcription_provider": "local_whisper",
+    "rename_transcription_audio_fraction": 0.5,
     "name_live_clips": False,
     "filename_prefix": "",
     "filename_suffix": "",
@@ -188,6 +189,9 @@ class ControlPanel(tk.Tk):
         self.ai_provider = tk.StringVar(value=self.config.get("ai_provider", "lmstudio"))
         self.rename_transcription_provider = tk.StringVar(
             value=self.config.get("rename_transcription_provider", "local_whisper")
+        )
+        self.rename_transcription_audio_percent = tk.StringVar(
+            value=str(int(float(self.config.get("rename_transcription_audio_fraction", 0.5)) * 100))
         )
         self.name_live_clips = tk.BooleanVar(value=bool(self.config.get("name_live_clips", False)))
         self.filename_prefix = tk.StringVar(value=self.config.get("filename_prefix", ""))
@@ -526,6 +530,10 @@ class ControlPanel(tk.Tk):
         ttk.Button(rename_frame, text="Start OBS Renamer", command=self.start_obs_renamer).grid(
             row=1, column=4, sticky="ew", padx=8, pady=(0, 8)
         )
+        ttk.Label(rename_frame, text="Transcript audio %").grid(row=2, column=0, sticky="w", padx=8, pady=(0, 2))
+        ttk.Entry(rename_frame, textvariable=self.rename_transcription_audio_percent).grid(
+            row=3, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
 
         rest_frame = ttk.LabelFrame(outer, text="Settings And Logs")
         rest_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
@@ -769,6 +777,8 @@ class ControlPanel(tk.Tk):
             self.config["ffmpeg_path"] = self.ffmpeg_path.get() or "ffmpeg"
             self.config["ai_provider"] = self.ai_provider.get()
             self.config["rename_transcription_provider"] = self.rename_transcription_provider.get()
+            transcript_percent = float(self.rename_transcription_audio_percent.get() or "50")
+            self.config["rename_transcription_audio_fraction"] = max(0.0, min(1.0, transcript_percent / 100.0))
             self.config["name_live_clips"] = self.name_live_clips.get()
             self.config["filename_prefix"] = self.filename_prefix.get()
             self.config["filename_suffix"] = self.filename_suffix.get()

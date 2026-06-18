@@ -71,12 +71,14 @@ Write-Host "Checking installed packages..."
 
 Write-Host ""
 Write-Host "Build complete."
+Write-Host "This command validates the source checkout; it does not refresh files under dist\."
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Start OBS and enable WebSocket."
 Write-Host "  2. Edit config.json if OBS is not on localhost:4455."
 Write-Host "  3. Run .\run_ui.bat to pick audio devices."
 Write-Host "  4. Run .\run_listener.bat to start voice commands."
+Write-Host "  5. To update packaged output, run .\package.ps1 -Target Portable or .\package.ps1 -Target Exe."
 
 if ($LaunchUI) {
     Write-Host ""

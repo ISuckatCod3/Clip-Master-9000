@@ -231,6 +231,7 @@ Live voice commands and clip renaming transcription are separate settings:
 - `voice_command_provider` controls live spoken commands such as `clip that`; use `vosk` for local low-latency command listening or `openai` for API transcription.
 - `voice.require_wake_phrase` keeps commands gated behind `clippy` or `clip master` by default. Say a wake phrase, then speak a command within `voice.wake_listen_seconds`.
 - `rename_transcription_provider` controls whether clip audio is transcribed before AI naming; use `local_whisper` for faster local transcript-aware names, `vosk` for the large Vosk model, `openai` for API transcription, or `disabled` to name from frames only.
+- `rename_transcription_audio_fraction` defaults to `0.5`, so rename transcription uses the first 50% of each clip's audio instead of transcribing the full clip. Set it to `1.0` if you want full-clip transcript context.
 - `local_whisper.model_size` can be a faster-whisper model name such as `base.en`, `small.en`, or a local model path. The first use may download the model.
 - `voice.rename_vosk_model_path` should point at the large Vosk model if `rename_transcription_provider` is set to `vosk`. This is separate from `voice.vosk_model_path`, so live commands can use a faster model later without downgrading Vosk rename transcripts.
 - `openai.voice_command_transcription_model` is used only for OpenAI-powered live commands.

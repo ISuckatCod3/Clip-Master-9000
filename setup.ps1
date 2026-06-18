@@ -40,6 +40,9 @@ if (-not $config.local_whisper) {
 if (-not $config.rename_transcription_provider -or [string]::IsNullOrWhiteSpace([string]$config.rename_transcription_provider)) {
     $config | Add-Member -MemberType NoteProperty -Name "rename_transcription_provider" -Value "local_whisper" -Force
 }
+if ($null -eq $config.rename_transcription_audio_fraction) {
+    $config | Add-Member -MemberType NoteProperty -Name "rename_transcription_audio_fraction" -Value 0.5 -Force
+}
 if (-not $config.local_whisper.model_size) {
     $config.local_whisper | Add-Member -MemberType NoteProperty -Name "model_size" -Value "base.en" -Force
 }
