@@ -1135,12 +1135,16 @@ class RollingClipper:
             print("No sampled frames were available; using timestamp filename.")
             return None
 
+        model_name = self.config.lmstudio.vision_model
+        qwen_no_think = "/no_think\n" if "qwen" in model_name.lower() else ""
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    "Name this video clip. Return only a concise filesystem-safe title, "
-                    "no extension, no explanation, no markdown. Use visible video context and transcript. If an RTSS, MSI "
+                    qwen_no_think +
+                    "Name this video clip. The first token of your response must be the title. "
+                    "Return only one concise filesystem-safe title, no extension, no explanation, "
+                    "no markdown, no reasoning. Use visible video context and transcript. If an RTSS, MSI "
                     "Afterburner, or similar performance overlay is visible, read any clear PC "
                     "specs or benchmark context from it and append compact specs to the title, "
                     "such as GPU model, CPU model, resolution, FPS, or graphics preset. Do not "
@@ -1154,18 +1158,20 @@ class RollingClipper:
 
         try:
             response = self.lmstudio_client.chat.completions.create(
-                model=self.config.lmstudio.vision_model,
+                model=model_name,
                 messages=[{"role": "user", "content": content}],
                 temperature=0.2,
-                max_tokens=96,
+                max_tokens=256,
             )
             choice = response.choices[0]
             title = clean_generated_title(extract_chat_message_text(choice.message))
             if not title:
+                title = extract_title_from_reasoning(choice.message)
+            if not title:
                 finish_reason = getattr(choice, "finish_reason", None)
                 print(
                     "LM Studio naming returned no title. "
-                    f"finish_reason={finish_reason or 'unknown'} model={self.config.lmstudio.vision_model}",
+                    f"finish_reason={finish_reason or 'unknown'} model={model_name}",
                     flush=True,
                 )
                 return None
@@ -1816,6 +1822,43 @@ def clean_generated_title(value: str) -> str:
     value = value.splitlines()[0].strip() if value else ""
     value = re.sub(r"\.(mp4|mkv|mov|flv)$", "", value, flags=re.IGNORECASE).strip()
     return sanitize_filename(value, fallback="") if value else ""
+
+
+def extract_title_from_reasoning(message: Any) -> str:
+    reasoning = str(getattr(message, "reasoning_content", "") or "").strip()
+    if not reasoning:
+        return ""
+
+    base = ""
+    base_match = re.search(r"(?im)^\s*(?:\*\s*)?Base title:\s*(.+)$", reasoning)
+    if base_match:
+        base = base_match.group(1).strip()
+    else:
+        game_match = re.search(r"(?im)^\s*\*\s*Game:\s*(.+)$", reasoning)
+        if game_match:
+            base = f"{game_match.group(1).strip()} Clip"
+
+    if not base:
+        return ""
+
+    specs: list[str] = []
+    for pattern in (
+        r"\b(?:RTX|GTX|RX|Radeon|Arc)\s*[A-Za-z0-9 -]{2,12}\b",
+        r"\b(?:R\d|Ryzen|i[3579]|Core)\s*[A-Za-z0-9 -]{2,12}\b",
+        r"\b\d{3,4}x\d{3,4}\b",
+        r"\b(?:720p|1080p|1440p|2160p|4K)\b",
+        r"\b(?:Vulkan|DX11|DX12|OpenGL)\b",
+    ):
+        for match in re.findall(pattern, reasoning, flags=re.IGNORECASE):
+            value = re.sub(r"\s+", " ", str(match).strip())
+            if value and value.lower() not in {item.lower() for item in specs}:
+                specs.append(value)
+
+    title = " ".join([base, *specs[:4]])
+    recovered = sanitize_filename(title, fallback="")
+    if recovered:
+        print(f"Recovered LM Studio title from reasoning: {recovered}", flush=True)
+    return recovered
 
 
 def normalize_obs_name(value: str) -> str:
