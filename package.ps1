@@ -138,6 +138,10 @@ if (Test-Path (Join-Path $Root "assets\app.ico")) {
 
 & $VenvPython -m PyInstaller @PyInstallerArgs
 
+if (Test-Path (Join-Path $Root "config.json")) {
+    Copy-Item -Path (Join-Path $Root "config.json") -Destination (Join-Path (Join-Path $DistRoot $ExeName) "config.json") -Force
+}
+
 Write-Host ""
 Write-Host "Exe package created:"
 Write-Host "  $DistRoot\$ExeName\$ExeName.exe"
