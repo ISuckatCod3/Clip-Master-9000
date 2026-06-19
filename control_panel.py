@@ -121,7 +121,7 @@ DEFAULT_CONFIG = {
         "clip_action": "obs_replay_buffer",
         "enable_obs_scene_source_switching": False,
         "require_wake_phrase": True,
-        "wake_phrases": ["clippy", "clip master"],
+        "wake_phrases": ["jeeves"],
         "wake_listen_seconds": 8,
     },
     "obs": {
@@ -175,8 +175,8 @@ class ControlPanel(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("980x720")
-        self.minsize(860, 620)
+        self.geometry("1120x860")
+        self.minsize(980, 760)
         self.configure(background=DARK_COLORS["background"])
         self.apply_window_icon()
         self.enable_windows_dark_title_bar()
@@ -244,7 +244,7 @@ class ControlPanel(tk.Tk):
             value=bool(voice.get("enable_obs_scene_source_switching", False))
         )
         self.require_wake_phrase = tk.BooleanVar(value=bool(voice.get("require_wake_phrase", True)))
-        wake_phrases = voice.get("wake_phrases", ["clippy", "clip master"])
+        wake_phrases = voice.get("wake_phrases", ["jeeves"])
         if isinstance(wake_phrases, str):
             wake_phrases_text = wake_phrases
         else:
@@ -441,6 +441,20 @@ class ControlPanel(tk.Tk):
         header.columnconfigure(0, weight=1)
         ttk.Label(header, text=APP_NAME, font=("Segoe UI", 16, "bold")).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.status).grid(row=0, column=1, sticky="e")
+        header_buttons = ttk.Frame(header)
+        header_buttons.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        for column in range(4):
+            header_buttons.columnconfigure(column, weight=1)
+        ttk.Button(header_buttons, text="Save Config", command=self.save_from_ui).grid(
+            row=0, column=0, sticky="ew", padx=(0, 6)
+        )
+        ttk.Button(header_buttons, text="Stop", command=self.stop_process).grid(row=0, column=1, sticky="ew", padx=6)
+        ttk.Button(header_buttons, text="Open Clips Folder", command=self.open_clips_folder).grid(
+            row=0, column=2, sticky="ew", padx=6
+        )
+        ttk.Button(header_buttons, text="Contact Me", command=self.open_contact_link).grid(
+            row=0, column=3, sticky="ew", padx=(6, 0)
+        )
 
         live_frame = ttk.LabelFrame(outer, text="Live Clipping")
         live_frame.grid(row=1, column=0, sticky="ew", pady=(12, 8))
@@ -728,19 +742,10 @@ class ControlPanel(tk.Tk):
         action_frame = ttk.Frame(rest_frame)
         action_frame.grid(row=2, column=0, sticky="nsew")
         action_frame.columnconfigure(0, weight=1)
-        action_frame.rowconfigure(1, weight=1)
+        action_frame.rowconfigure(0, weight=1)
 
-        buttons = ttk.Frame(action_frame)
-        buttons.grid(row=0, column=0, sticky="ew")
-        for column in range(4):
-            buttons.columnconfigure(column, weight=1)
-        ttk.Button(buttons, text="Save Config", command=self.save_from_ui).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(buttons, text="Stop", command=self.stop_process).grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Open Clips Folder", command=self.open_clips_folder).grid(row=0, column=2, sticky="ew", padx=6)
-        ttk.Button(buttons, text="Contact Me", command=self.open_contact_link).grid(row=0, column=3, sticky="ew", padx=(6, 0))
-
-        self.log = tk.Text(action_frame, height=12, wrap=tk.WORD)
-        self.log.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        self.log = tk.Text(action_frame, height=18, wrap=tk.WORD)
+        self.log.grid(row=0, column=0, sticky="nsew", pady=(4, 0))
         self.log.configure(state=tk.DISABLED)
         self.style_native_widgets()
 
@@ -1088,10 +1093,6 @@ class ControlPanel(tk.Tk):
         if self.whisperlive_process and self.whisperlive_process.poll() is None:
             messagebox.showinfo("WhisperLive Running", "WhisperLive is already running.")
             return
-        script_path = APP_DIR / "run_whisperlive_server.ps1"
-        if not script_path.exists():
-            messagebox.showerror("WhisperLive Missing", f"Could not find {script_path}")
-            return
         rest_port = self.whisperlive_rest_port()
         if getattr(sys, "frozen", False):
             command = [
@@ -1103,6 +1104,10 @@ class ControlPanel(tk.Tk):
                 self.whisperlive_model.get() or "base.en",
             ]
         else:
+            script_path = APP_DIR / "run_whisperlive_server.ps1"
+            if not script_path.exists():
+                messagebox.showerror("WhisperLive Missing", f"Could not find {script_path}")
+                return
             command = [
                 "powershell",
                 "-NoProfile",

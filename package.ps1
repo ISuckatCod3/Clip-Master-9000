@@ -94,8 +94,14 @@ if ($Target -eq "Portable") {
 
 Write-Host "Installing PyInstaller..."
 & $VenvPython -m pip install pyinstaller
-Write-Host "Installing WhisperLive for EXE packaging..."
-& $VenvPython -m pip install whisper-live
+
+$IncludeWhisperLive = $false
+& $VenvPython -m pip show whisper-live | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    $IncludeWhisperLive = $true
+} else {
+    Write-Host "WhisperLive is not installed; packaging without the optional local WhisperLive server runtime."
+}
 
 $ExistingExe = Join-Path (Join-Path $DistRoot $ExeName) "$ExeName.exe"
 if (Test-Path $ExistingExe) {
@@ -116,13 +122,16 @@ $PyInstallerArgs = @(
     "--collect-all", "tokenizers",
     "--collect-all", "onnxruntime",
     "--collect-all", "av",
-    "--collect-all", "whisper_live",
     "--add-data", "config.example.json;.",
     "--add-data", "run_whisperlive_server.bat;.",
     "--add-data", "run_whisperlive_server.ps1;.",
     "--add-data", "run_whisperlive_server.py;.",
     "control_panel.py"
 )
+
+if ($IncludeWhisperLive) {
+    $PyInstallerArgs += @("--collect-all", "whisper_live")
+}
 
 if (-not $SkipVoskModel -and (Test-Path (Join-Path $Root "models"))) {
     $PyInstallerArgs += @("--add-data", "models;models")
@@ -140,6 +149,13 @@ if (Test-Path (Join-Path $Root "assets\app.ico")) {
 
 if (Test-Path (Join-Path $Root "config.json")) {
     Copy-Item -Path (Join-Path $Root "config.json") -Destination (Join-Path (Join-Path $DistRoot $ExeName) "config.json") -Force
+}
+
+foreach ($item in @("run_whisperlive_server.bat", "run_whisperlive_server.ps1", "run_whisperlive_server.py")) {
+    $source = Join-Path $Root $item
+    if (Test-Path $source) {
+        Copy-Item -Path $source -Destination (Join-Path (Join-Path $DistRoot $ExeName) $item) -Force
+    }
 }
 
 Write-Host ""

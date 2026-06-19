@@ -79,8 +79,7 @@
     "enable_obs_scene_source_switching": false,
     "require_wake_phrase": true,
     "wake_phrases": [
-      "clippy",
-      "clip master"
+      "jeeves"
     ],
     "wake_listen_seconds": 8
   },

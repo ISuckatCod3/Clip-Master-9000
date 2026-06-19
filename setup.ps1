@@ -75,6 +75,11 @@ if ([string]::IsNullOrWhiteSpace($configuredModelPath) -or $configuredModelPath 
     Write-Host "Updating config.json to use the larger default Vosk model..."
     $config.voice | Add-Member -MemberType NoteProperty -Name "vosk_model_path" -Value $DefaultModelPath -Force
 }
+$wakePhrases = @($config.voice.wake_phrases | ForEach-Object { [string]$_ })
+if ($wakePhrases.Count -eq 2 -and $wakePhrases[0].ToLowerInvariant() -eq "clippy" -and $wakePhrases[1].ToLowerInvariant() -eq "clip master") {
+    Write-Host "Updating default wake phrase to Jeeves..."
+    $config.voice.wake_phrases = @("jeeves")
+}
 $configJson = $config | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($ConfigPath, $configJson, [System.Text.UTF8Encoding]::new($false))
 

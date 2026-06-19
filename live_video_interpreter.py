@@ -171,7 +171,7 @@ class VoiceConfig:
     clip_action: str = "obs_replay_buffer"
     enable_obs_scene_source_switching: bool = False
     require_wake_phrase: bool = True
-    wake_phrases: tuple[str, ...] = ("clippy", "clip master")
+    wake_phrases: tuple[str, ...] = ("jeeves",)
     wake_listen_seconds: float = 8.0
 
 
